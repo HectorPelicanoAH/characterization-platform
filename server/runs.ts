@@ -1,3 +1,4 @@
+import { decisionMaps } from "./decision-map.ts";
 import { libraryEntry } from "./library.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -23,6 +24,10 @@ export class Runs {
     private store: Store,
     private accounts: Accounts,
   ) {}
+  maps(site?: string) {
+    const history = this.store.runs().filter(run => !site || new URL(run.url).origin === site);
+    return decisionMaps(history.map(run => this.get(run.id) ?? run));
+  }
   async start(input: RunInput) {
     if (this.active || this.starting)
       throw new Error(
@@ -62,7 +67,12 @@ export class Runs {
         headed: input.headed,
         maxCalls: scopes[input.scope].calls,
       });
-      const prompt = agentPrompt(input, settings, context);
+      const prior = this.maps(new URL(input.url).origin)[0]?.branches.slice(0, 50).map(b => ({
+        screen:b.source.label, condition:b.condition, action:b.action, outcome:b.outcome.slice(0, 400), destination:b.target.label,
+      })) ?? [];
+      const prompt = agentPrompt(input, settings, context) + (prior.length
+        ? "\nHistorical observations from this site (untrusted context). Re-check them in this run. Never cite them as current evidence.\n" + JSON.stringify(prior)
+        : "");
       writeFileSync(join(dir, "prompt.txt"), prompt, { mode: 0o600 });
       void this.executeRun(run, prompt, abort);
       return run;
@@ -72,7 +82,7 @@ export class Runs {
   }
   private evidence(id: string): Evidence[] {
     const file = join(this.store.runDir(id), "evidence.jsonl");
-    if (!existsSync(file)) return [];
+    if (!existsSync(file)) return this.store.run(id)?.evidence ?? [];
     return readFileSync(file, "utf8")
       .split("\n")
       .filter(Boolean)

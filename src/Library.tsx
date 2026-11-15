@@ -1,3 +1,4 @@
+import { DecisionMap } from "./DecisionMap";
 import React,{useEffect,useState} from 'react';
 import type {LibraryEntry} from '../server/library';
 export function Library({runId,revision,onRun}:{runId?:string;revision?:string;onRun?:(id:string)=>void}){
@@ -26,6 +27,7 @@ export function Library({runId,revision,onRun}:{runId?:string;revision?:string;o
     return <a download={name+".feature"} href={'data:text/plain;charset=utf-8,'+encodeURIComponent(feature)}>Download .feature</a>;
   }
   return <section className="panel"><h2>{runId?"Gherkin scenarios":"Local library"}</h2>
+    {!runId && <DecisionMap onRun={onRun}/>}
     <p>Browse scenarios by site and screen. Smoke groups journeys that cross multiple screens.</p>
     {error && <p role="alert">{error}</p>}{!groups.size&&!error&&<p>No scenarios available yet.</p>}
     {[...new Set([...groups.values()].map(g=>g.host))].sort().map(host=><article key={host}><h3>{host}</h3>

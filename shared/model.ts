@@ -70,6 +70,7 @@ export const reportSchema = z.object({
     .array(
       z.object({
         title: z.string().min(1).max(300),
+        given: z.string().max(500).default(""),
         steps: z.array(z.string().max(2000)).min(1).max(60),
         observed: z.string().min(1).max(8000),
         evidenceIds: z.array(z.number().int().positive()).min(1).max(100),
@@ -77,6 +78,13 @@ export const reportSchema = z.object({
       }),
     )
     .max(80),
+  decisions: z.array(z.object({
+    condition: z.string().min(1).max(240),
+    action: z.string().min(1).max(240),
+    outcome: z.string().min(1).max(600),
+    sourceEvidenceId: z.number().int().positive(),
+    resultEvidenceId: z.number().int().positive(),
+  })).max(120).default([]),
   gaps: z.array(z.string().max(3000)).max(100),
 });
 export type Report = z.infer<typeof reportSchema>;
@@ -100,6 +108,7 @@ export type Evidence = {
   at: string;
   ok: boolean;
   detail: string;
+  element?: string;
   externalUrl?: string;
   externalUrls?: string[];
 };

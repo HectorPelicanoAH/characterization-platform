@@ -1665,3 +1665,14 @@ summary {
   background: #293b2d;
   border-color: #86ae8d;
 }
+.decision-map { margin: 20px 0 28px; padding: 18px; border: 1px solid var(--border); border-radius: 10px; }
+.map-select { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 15px; }
+.map-select label { display: grid; gap: 5px; flex: 1 1 200px; min-width: 0; }
+.map-select select,.map-edge button { color: inherit; background: var(--cream); border: 1px solid var(--border); border-radius: 6px; padding: 7px; max-width: 100%; }
+.map-edges { display: grid; gap: 6px; }
+.map-edge { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; overflow-wrap: anywhere; }
+.map-edge span { color: var(--green); }
+.map-edge button:disabled { opacity: 1; font-weight: 700; }
+.map-condition summary { cursor: pointer; font-weight: 600; }
+.map-condition ul { border-left: 2px solid var(--border); padding-left: 22px; margin: 10px 0 18px 5px; }
+.map-condition li { padding: 3px 0 8px; overflow-wrap: anywhere; }

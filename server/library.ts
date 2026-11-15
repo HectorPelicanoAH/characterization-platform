@@ -1,6 +1,6 @@
 import {createHash} from "node:crypto";
 import {unlinkSync} from "node:fs";
-import { screensFor } from "./screens.ts";
+import { identify, screensFor } from "./screens.ts";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { reportSchema, type Run } from "../shared/model.ts";
@@ -15,14 +15,22 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
   }
   const events=run.evidence;
   const ok=new Set(events.filter(e=>e.ok).map(e=>e.id));
-  const scenarios:{title:string;state:string;gherkin:string;ids:number[]}[]=[];
+  const scenarios:{title:string;state:string;gherkin:string;legacy:string;ids:number[]}[]=[];
   const host=new URL(run.url).hostname;
   for (const raw of Array.isArray(flows)?flows:[]) {
     const parsed=reportSchema.shape.flows.element.safeParse(raw);
     if(!parsed.success) continue;
     const f=parsed.data;
     const state=f.evidenceIds.every(id=>ok.has(id))?"Documented":"Review evidence";
-    scenarios.push({title:f.title,state,ids:f.evidenceIds,gherkin:[
+    const first = events.findIndex(event => event.ok && f.evidenceIds.includes(event.id));
+    const firstEvent = events[first];
+    const before = events[first-1];
+    const contextEvent = firstEvent?.tool === "browser_snapshot" ? firstEvent : before?.ok ? before : undefined;
+    const screen = contextEvent && screensFor([contextEvent.id], [contextEvent])[0];
+    const given = f.given || (screen && !screen.label.startsWith("/") ? "the user is on the " + screen.label + " screen" : "");
+    const gherkin = ["Scenario: "+line(f.title), ...(given ? ["  Given "+line(given)] : []),
+      ...f.steps.map((step,i)=>(i ? "  And " : "  When ")+line(step)), "  Then "+line(f.observed)].join("\n");
+    scenarios.push({title:f.title,state,ids:f.evidenceIds,gherkin,legacy:[
       "Escenario: "+line(f.title),"  Dado que la URL inicial es "+run.url,
       ...f.steps.map((s,i)=>(i?"  Y ":"  Cuando ")+line(s)),
       "  Entonces "+line(f.observed)].join("\n")});
@@ -36,7 +44,9 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
       const title=e.detail.match(/^- Page Title: (.+)/m)?.[1];
       if(!url || !title || previous===url) continue;
       const start=previous||run.url; previous=url;
-      scenarios.push({title:line(title),state:"Observed draft",ids:[e.id],gherkin:
+      const screen = identify(url,title)?.label ?? title;
+      const gherkin = "Scenario: View the "+line(screen)+" screen\n  When the user opens the "+line(screen)+" screen\n  Then the displayed page title is "+line(title);
+      scenarios.push({title:line(title),state:"Observed draft",ids:[e.id],gherkin,legacy:
         "Escenario: "+line(title)+"\n  Dado que el recorrido parte de "+start+"\n  Cuando se observa la página tras "+e.tool+"\n  Entonces la URL visible es "+url+"\n  Y el título es "+line(title)});
     }
   }
@@ -45,16 +55,8 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
     const group=screens.length>1?"Smoke":screens[0]?.label??"Unknown screen";
     const groupKey=screens.length>1?"smoke":screens[0]?.key??"unknown";
     // Preserve scenario IDs (including existing exclusions) across display languages.
-    const gherkin = s.gherkin.split("\n").map(step => step
-      .replace(/^Escenario: /, "Scenario: ")
-      .replace(/^  Dado que la URL inicial es /, "  Given the starting URL is ")
-      .replace(/^  Dado que el recorrido parte de /, "  Given the journey starts at ")
-      .replace(/^  Cuando se observa la página tras /, "  When the page is observed after ")
-      .replace(/^  Entonces la URL visible es /, "  Then the visible URL is ")
-      .replace(/^  Y el título es /, "  And the title is ")
-      .replace(/^  Cuando /, "  When ").replace(/^  Entonces /, "  Then ").replace(/^  Y /, "  And ")
-    ).join("\n");
-    return {...s,gherkin,screens,group,groupKey,id:createHash("sha256").update(JSON.stringify([s.title,s.ids,s.gherkin])).digest("hex")};
+    const {legacy,...scenario}=s;
+    return {...scenario,screens,group,groupKey,id:createHash("sha256").update(JSON.stringify([s.title,s.ids,legacy])).digest("hex")};
   }).sort((a,b)=>a.group.localeCompare(b.group,"es")||a.title.localeCompare(b.title,"es"));
   const exclusions=new Set(store.exclusions(run.id).scenarios);
   const visible=classified.filter(s=>!exclusions.has(s.id));

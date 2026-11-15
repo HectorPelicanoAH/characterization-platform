@@ -132,6 +132,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         tool,
         at: new Date().toISOString(),
         ok: !result.isError,
+        ...(typeof request.params.arguments?.element === "string" ? { element: request.params.arguments.element.slice(0, 160) } : {}),
         detail,
         ...(externalUrls.length
           ? { externalUrl: externalUrls[0], externalUrls }

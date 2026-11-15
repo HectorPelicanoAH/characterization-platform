@@ -117,6 +117,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     store.exclude(run.id,req.params.scenario);
     res.json(libraryEntry(store,run));
   });
+  app.get("/api/decision-maps", (_req,res)=>res.json(runs.maps()));
   app.get("/api/library", (_req,res)=>res.json(library()));
   app.get("/api/runs/:id/scenarios", (req,res)=>{
     const run=runs.get(req.params.id);

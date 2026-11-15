@@ -20,10 +20,12 @@ const input = runInputSchema.parse({
   provider: "codex",
 });
 const report: Report = {
+  decisions: [],
   summary: "Filtro observado",
   flows: [
     {
       title: "Filtrar",
+      given: "",
       steps: ["Abrir catálogo"],
       observed: "Se ven dos artículos",
       evidenceIds: [1],
@@ -206,4 +208,38 @@ test("worker cancellation and timeout terminate actual child processes", async (
     }),
     /timed out/,
   );
+});
+
+test("maps preserve alternative outcomes and ignore failed or missing evidence", async () => {
+  const { decisionMaps } = await import("../server/decision-map.ts");
+  const event = (id:number, path:string, ok=true) => ({
+    id,at:"",ok,tool:id===1?"browser_navigate":"browser_click",detail:"- Page URL: https://example.test/"+path,
+  });
+  const run = {id:"run",url:"https://example.test",evidence:[event(1,"cart"),event(2,"cart"),event(3,"checkout"),event(4,"unseen",false)],
+    report:{...report, decisions:[
+      {sourceEvidenceId:1,resultEvidenceId:2,condition:"Cart empty",action:"Continue",outcome:"Validation shown"},
+      {sourceEvidenceId:2,resultEvidenceId:3,condition:"Cart has items",action:"Continue",outcome:"Checkout opens"},
+      {sourceEvidenceId:3,resultEvidenceId:4,condition:"Unknown",action:"Pay",outcome:"Unverified"},
+    ]}} as Run;
+  const [map] = decisionMaps([run,run]);
+  assert.equal(map.screens.length,2);
+  assert.deepEqual(map.branches.map(b=>b.condition),["Cart empty","Cart has items"]);
+});
+
+test("library renders screen context and preserves scenario exclusions when wording changes", async () => {
+  const {libraryEntry} = await import("../server/library.ts");
+  const dir = await mkdtemp(join(tmpdir(), "characterize-gherkin-"));
+  try {
+    const store = new Store(dir);
+    const run = {...input,id:randomUUID(),report:structuredClone(report),evidence:[
+      {id:1,tool:"browser_snapshot",ok:true,at:"",detail:"- Page URL: https://example.test/catalog\n- Page Title: Catalog"},
+    ]} as Run;
+    store.saveRun(run);
+    const original = libraryEntry(store,run).scenarios[0];
+    assert.match(original.gherkin,/Given the user is on the Catalog screen/);
+    run.report!.flows[0].given = "the catalog offers a choice of colors";
+    assert.match(libraryEntry(store,run).feature,/Given the catalog offers a choice of colors/);
+    store.exclude(run.id,original.id);
+    assert.equal(libraryEntry(store,run).scenarios.length,0);
+  } finally { await rm(dir,{recursive:true,force:true}); }
 });

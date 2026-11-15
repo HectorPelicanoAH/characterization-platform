@@ -1,7 +1,7 @@
 import type { Evidence } from "../shared/model.ts";
 
 export type Screen = { key: string; label: string };
-function identify(raw: string, title?: string): Screen | undefined {
+export function identify(raw: string, title?: string): Screen | undefined {
   try {
     const u = new URL(raw);
     if (!["http:", "https:"].includes(u.protocol)) return;
