@@ -1,0 +1,60 @@
+import {createHash} from "node:crypto";
+import {unlinkSync} from "node:fs";
+import { screensFor } from "./screens.ts";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { reportSchema, type Run } from "../shared/model.ts";
+import { Store } from "./store.ts";
+
+const line = (s:string) => s.replace(/\s+/g," ").trim();
+export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
+  const dir=store.runDir(run.id);
+  let flows: unknown = run.report?.flows;
+  if (!flows && existsSync(join(dir,"response.json"))) {
+    try { flows=JSON.parse(readFileSync(join(dir,"response.json"),"utf8")).flows; } catch {}
+  }
+  const events=run.evidence;
+  const ok=new Set(events.filter(e=>e.ok).map(e=>e.id));
+  const scenarios:{title:string;state:string;gherkin:string;ids:number[]}[]=[];
+  const host=new URL(run.url).hostname;
+  for (const raw of Array.isArray(flows)?flows:[]) {
+    const parsed=reportSchema.shape.flows.element.safeParse(raw);
+    if(!parsed.success) continue;
+    const f=parsed.data;
+    const state=f.evidenceIds.every(id=>ok.has(id))?"Documentado":"Revisar evidencia";
+    scenarios.push({title:f.title,state,ids:f.evidenceIds,gherkin:[
+      "Escenario: "+line(f.title),"  Dado que la URL inicial es "+run.url,
+      ...f.steps.map((s,i)=>(i?"  Y ":"  Cuando ")+line(s)),
+      "  Entonces "+line(f.observed)].join("\n")});
+  }
+  // Without a final proposal, retain concrete page observations as drafts.
+  if(!scenarios.length) {
+    let previous="";
+    for(const e of events) {
+      if(!e.ok) continue;
+      const url=e.detail.match(/^- Page URL: (https?:\/\/\S+)/m)?.[1];
+      const title=e.detail.match(/^- Page Title: (.+)/m)?.[1];
+      if(!url || !title || previous===url) continue;
+      const start=previous||run.url; previous=url;
+      scenarios.push({title:line(title),state:"Borrador observado",ids:[e.id],gherkin:
+        "Escenario: "+line(title)+"\n  Dado que el recorrido parte de "+start+"\n  Cuando se observa la página tras "+e.tool+"\n  Entonces la URL visible es "+url+"\n  Y el título es "+line(title)});
+    }
+  }
+  const classified=scenarios.map(s=>{
+    const screens=screensFor(s.ids,events);
+    const group=screens.length>1?"Smoke":screens[0]?.label??"Sin pantalla identificada";
+    const groupKey=screens.length>1?"smoke":screens[0]?.key??"unknown";
+    return {...s,screens,group,groupKey,id:createHash("sha256").update(JSON.stringify([s.title,s.ids,s.gherkin])).digest("hex")};
+  }).sort((a,b)=>a.group.localeCompare(b.group,"es")||a.title.localeCompare(b.title,"es"));
+  const exclusions=new Set(store.exclusions(run.id).scenarios);
+  const visible=classified.filter(s=>!exclusions.has(s.id));
+  const feature=["# language: es","Característica: Recorrido de "+host,...visible.map(s=>"\n  # "+line(s.group)+" · "+s.state+" · Evidencias: "+s.ids.join(", ")+"\n  "+(s.groupKey==="smoke"?"@smoke\n  ":"")+s.gherkin.replaceAll("\n","\n  "))].join("\n")+"\n";
+  if(visible.length) {
+    const folder=join(store.root,"library"); mkdirSync(folder,{recursive:true,mode:0o700});
+    const path=join(folder,run.id+".feature");
+    if(!existsSync(path)||readFileSync(path,"utf8")!==feature){writeFileSync(path+".tmp",feature,{mode:0o600});renameSync(path+".tmp",path);}
+  }
+  else {const path=join(store.root,"library",run.id+".feature");if(existsSync(path))unlinkSync(path);}
+  return {id:run.id,url:run.url,status:run.status,createdAt:run.createdAt,scenarios:includeExcluded?classified:visible,feature};
+}
+export type LibraryEntry=ReturnType<typeof libraryEntry>;

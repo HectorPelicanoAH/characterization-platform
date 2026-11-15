@@ -1,0 +1,97 @@
+import { spawn, type ChildProcess } from "node:child_process";
+
+export function clean(text: string) {
+  return text
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(
+      /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]+)\b/g,
+      "[REDACTED]",
+    )
+    .replace(/(Bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
+}
+export function terminate(child: ChildProcess) {
+  if (!child.pid) return;
+  const kill = (signal: NodeJS.Signals) => {
+    try {
+      process.kill(-child.pid!, signal);
+    } catch {
+      try {
+        child.kill(signal);
+      } catch {}
+    }
+  };
+  kill("SIGTERM");
+  const timer = setTimeout(() => kill("SIGKILL"), 2000);
+  timer.unref();
+}
+export function execute(
+  binary: string,
+  args: string[],
+  options: {
+    cwd?: string;
+    input?: string;
+    timeout?: number;
+    signal?: AbortSignal;
+    onOutput?: (text: string) => void;
+    env?: NodeJS.ProcessEnv;
+  } = {},
+) {
+  return new Promise<{ code: number; stdout: string; stderr: string }>(
+    (resolve, reject) => {
+      if (options.signal?.aborted) return reject(new Error("Cancelado"));
+      const env = { ...process.env, ...options.env };
+      delete env.CLAUDECODE;
+      const child = spawn(binary, args, {
+        cwd: options.cwd,
+        env,
+        detached: process.platform !== "win32",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let stdout = "",
+        stderr = "",
+        timedOut = false,
+        overflow = false;
+      const abort = () => terminate(child);
+      options.signal?.addEventListener("abort", abort, { once: true });
+      const timer = setTimeout(() => {
+        timedOut = true;
+        terminate(child);
+      }, options.timeout ?? 15000);
+      const output = (kind: "out" | "err", data: Buffer) => {
+        const value = data.toString();
+        if (stdout.length + stderr.length + value.length > 8_000_000) {
+          overflow = true;
+          terminate(child);
+          return;
+        }
+        if (kind === "out") stdout += value;
+        else stderr += value;
+        options.onOutput?.(clean(value));
+      };
+      child.stdout.on("data", (data) => output("out", data));
+      child.stderr.on("data", (data) => output("err", data));
+      child.stdin.on("error", () => {});
+      child.stdin.end(options.input ?? "");
+      const cleanup = () => {
+        clearTimeout(timer);
+        options.signal?.removeEventListener("abort", abort);
+      };
+      child.on("error", (error) => {
+        cleanup();
+        reject(error);
+      });
+      child.on("close", (code) => {
+        cleanup();
+        if (options.signal?.aborted) reject(new Error("Cancelado"));
+        else if (timedOut)
+          reject(new Error("Se ha agotado el tiempo de ejecución."));
+        else if (overflow)
+          reject(
+            new Error("La salida del proveedor supera el límite de 8 MB."),
+          );
+        else resolve({ code: code ?? 1, stdout, stderr });
+      });
+    },
+  );
+}
