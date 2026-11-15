@@ -15,20 +15,24 @@ test("setup, context persistence, coverage and provider requirements work on des
   );
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Tu agente, con tu contexto." }),
+    page.getByRole("heading", { name: "Give your agent context." }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Empezar a explorar" }),
+    page.getByRole("button", { name: "Start exploring" }),
   ).toBeDisabled();
   await page
-    .getByLabel("Instrucciones para el agente")
+    .getByLabel("Agent instructions")
     .fill("Prioriza navegación y catálogo.");
-  await page.getByRole("button", { name: "Guardar configuración" }).click();
+  await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByRole("status")).toContainText(
-    "Configuración guardada",
+    "Settings saved",
   );
+  const theme = page.getByRole("button", { name: "Dark mode" });
+  const previous = await theme.getAttribute("aria-pressed");
+  await theme.click();
   await page.reload();
-  await expect(page.getByLabel("Instrucciones para el agente")).toHaveValue(
+  await expect(theme).toHaveAttribute("aria-pressed", previous === "true" ? "false" : "true");
+  await expect(page.getByLabel("Agent instructions")).toHaveValue(
     "Prioriza navegación y catálogo.",
   );
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -37,14 +41,14 @@ test("setup, context persistence, coverage and provider requirements work on des
     fullPage: true,
   });
   await page
-    .getByRole("button", { name: "Caracterización", exact: false })
+    .getByRole("button", { name: "Characterization", exact: false })
     .first()
     .click();
-  await page.getByLabel("URL de inicio").fill("https://example.com");
-  await page.getByRole("radio", { name: /En detalle/ }).check();
-  await expect(page.getByRole("radio", { name: /En detalle/ })).toBeChecked();
+  await page.getByLabel("Starting URL").fill("https://example.com");
+  await page.getByRole("radio", { name: /Detailed/ }).check();
+  await expect(page.getByRole("radio", { name: /Detailed/ })).toBeChecked();
   await expect(
-    page.getByRole("button", { name: "Iniciar caracterización" }),
+    page.getByRole("button", { name: "Start characterization" }),
   ).toBeDisabled();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
@@ -53,7 +57,7 @@ test("setup, context persistence, coverage and provider requirements work on des
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
-    page.getByRole("button", { name: "Iniciar caracterización" }),
+    page.getByRole("button", { name: "Start characterization" }),
   ).toBeVisible();
   expect(
     await page.evaluate(

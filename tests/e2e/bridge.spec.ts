@@ -70,7 +70,7 @@ test("official MCP follows same-domain redirects and records external destinatio
       arguments: { url: base + "/external" },
     });
     expect(next.isError).toBeFalsy();
-    expect(JSON.stringify(next)).toContain("CASO DE SALIDA DEL DOMINIO");
+    expect(JSON.stringify(next)).toContain("EXTERNAL REDIRECT");
     const blocked = await client.callTool({
       name: "browser_click",
       arguments: { element: "Do not click", ref: "e1" },
@@ -97,7 +97,7 @@ test("official MCP follows same-domain redirects and records external destinatio
       arguments: { element: "Open external tab", target: ref },
     });
     expect(popup.isError).toBeFalsy();
-    expect(JSON.stringify(popup)).toContain("CASO DE SALIDA DEL DOMINIO");
+    expect(JSON.stringify(popup)).toContain("EXTERNAL REDIRECT");
     const events = (await readFile(join(dir, "evidence.jsonl"), "utf8"))
       .trim()
       .split("\n")

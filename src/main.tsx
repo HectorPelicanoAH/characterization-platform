@@ -1,3 +1,4 @@
+import { ThemeToggle } from "./ThemeToggle";
 import { Diagnosis } from "./Diagnosis";
 import { Library } from "./Library";
 import React, { useEffect, useState } from "react";
@@ -55,7 +56,7 @@ async function api<T>(
   });
   const value = await response.json();
   if (!response.ok)
-    throw new Error(value.error ?? "No se pudo completar la operación.");
+    throw new Error(value.error ?? "The operation could not be completed.");
   return value;
 }
 const providerInfo = {
@@ -63,33 +64,33 @@ const providerInfo = {
     name: "Codex",
     company: "OpenAI",
     mark: "◎",
-    description: "Tu cuenta de ChatGPT",
+    description: "Your ChatGPT account",
     color: "green",
   },
   claude: {
     name: "Claude",
     company: "Anthropic",
     mark: "✳",
-    description: "Tu cuenta de Claude",
+    description: "Your Claude account",
     color: "clay",
   },
   copilot: {
     name: "Copilot",
     company: "GitHub",
     mark: "⌘",
-    description: "Tu cuenta de GitHub",
+    description: "Your GitHub account",
     color: "purple",
   },
 };
 const statusNames: Record<Run["status"], string> = {
-  running: "En curso",
-  completed: "Generada",
-  failed: "Fallida",
-  cancelled: "Cancelada",
-  interrupted: "Interrumpida",
+  running: "Running",
+  completed: "Generated",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  interrupted: "Interrupted",
 };
 function readableDate(value: string) {
-  return new Intl.DateTimeFormat("es", {
+  return new Intl.DateTimeFormat("en", {
     day: "numeric",
     month: "short",
     hour: "2-digit",
@@ -218,7 +219,7 @@ function App() {
     const saved = await api<Settings>("/settings", settings, "PUT");
     setSettings(saved);
     setDirty(false);
-    setNotice("Configuración guardada.");
+    setNotice("Settings saved.");
   }
   async function download() {
     const response = await fetch(`/api/runs/${run!.id}/export`, {
@@ -250,14 +251,14 @@ function App() {
             characterize<span className="brand-dot">.</span>
           </span>
         </a>
-        <div className="workspace-label">TU ESPACIO DE TRABAJO</div>
-        <nav aria-label="Navegación principal">
+        <div className="workspace-label">YOUR WORKSPACE</div>
+        <nav aria-label="Main navigation">
           <button
             className={page === "settings" ? "nav-item selected" : "nav-item"}
             onClick={() => setPage("settings")}
           >
             <Settings2 size={18} />
-            <span>Configuración</span>
+            <span>Settings</span>
             <span className="step-count">01</span>
           </button>
           <button
@@ -265,18 +266,18 @@ function App() {
             onClick={() => setPage("explore")}
           >
             <Radar size={18} />
-            <span>Caracterización</span>
+            <span>Characterization</span>
             <span className="step-count">02</span>
           </button>
-          <button className={page==="library"?"nav-item selected":"nav-item"} onClick={()=>setPage("library")}><FolderOpen size={18}/> Biblioteca local</button>
+          <button className={page==="library"?"nav-item selected":"nav-item"} onClick={()=>setPage("library")}><FolderOpen size={18}/> Local library</button>
         </nav>
         <div className="sidebar-history">
           <div className="workspace-label">
-            EXPLORACIONES RECIENTES <History size={13} />
+            RECENT EXPLORATIONS <History size={13} />
           </div>
           {!history.length && (
             <p className="muted small history-empty">
-              Tus recorridos aparecerán aquí.
+              Your explorations will appear here.
             </p>
           )}
           {history.slice(0, 8).map((item) => (
@@ -298,15 +299,15 @@ function App() {
                 <small>{readableDate(item.createdAt)}</small>
               </span>
             </button>
-            <button className="recent-remove" disabled={Boolean(busy)||item.status==="running"} aria-label={"Quitar de recientes: "+new URL(item.url).hostname} title="Quitar de recientes" onClick={()=>{
-              if(!window.confirm("¿Quitar esta exploración de recientes? Sus escenarios y evidencias se conservarán."))return;
-              void attempt("remove-recent",async()=>{await api("/recent/"+item.id,undefined,"DELETE");await refreshHistory();setNotice("Exploración quitada de recientes.");});
+            <button className="recent-remove" disabled={Boolean(busy)||item.status==="running"} aria-label={"Remove from recent explorations: "+new URL(item.url).hostname} title="Remove from recent explorations" onClick={()=>{
+              if(!window.confirm("Remove this exploration from recent history? Its scenarios and evidence will be kept."))return;
+              void attempt("remove-recent",async()=>{await api("/recent/"+item.id,undefined,"DELETE");await refreshHistory();setNotice("Exploration removed from recent history.");});
             }}><Trash2 size={15}/></button></div>
           ))}
         </div>
         <div className="sidebar-bottom">
           <span className="local-dot" />
-          <span>Entorno local</span>
+          <span>Local environment</span>
           <span className="mono">v0.1</span>
         </div>
       </aside>
@@ -315,21 +316,22 @@ function App() {
           <span>
             Workspace <span className="breadcrumb">/</span>{" "}
             <strong>
-              {page === "settings" ? "Configuración" : page==="library" ? "Biblioteca local" : "Caracterización"}
+              {page === "settings" ? "Settings" : page==="library" ? "Local library" : "Characterization"}
             </strong>
           </span>
+          <ThemeToggle />
           <span className="local-badge">
             <span className={connected.length ? "local-dot" : "offline-dot"} />
             {connected.length
-              ? `${connected.length} cuenta${connected.length > 1 ? "s" : ""} conectada${connected.length > 1 ? "s" : ""}`
-              : "Sin cuenta conectada"}
+              ? `${connected.length} connected account${connected.length > 1 ? "s" : ""}`
+              : "No account connected"}
           </span>
         </header>
         <main>
           {error && (
             <div role="alert" className="alert error">
               <span>{error}</span>
-              <button aria-label="Cerrar error" onClick={() => setError("")}>
+              <button aria-label="Dismiss error" onClick={() => setError("")}>
                 <X size={16} />
               </button>
             </div>
@@ -343,29 +345,28 @@ function App() {
           {!loaded ? (
             <div className="loading">
               <LoaderCircle className="spin" />
-              Preparando tu espacio…
+              Loading your workspace…
             </div>
           ) : page==="library" ? <Library onRun={id=>void attempt("history",async()=>{setRun(await api<Run>("/runs/"+id));setPage("result")})}/> : page === "settings" ? (
             <>
               <div className="page-heading">
-                <div className="eyebrow">01 — PREPARA EL TERRENO</div>
-                <h1>Tu agente, con tu contexto.</h1>
+                <div className="eyebrow">WORKSPACE SETUP</div>
+                <h1>Give your agent context.</h1>
                 <p>
-                  Conecta tu IA y dale las claves para entender cómo trabajas.
+                  Connect an AI account and choose the instructions it should follow.
                 </p>
               </div>
               <section className="panel">
                 <div className="section-heading">
                   <div>
                     <h2>
-                      <span className="section-number">01</span> Conecta una
-                      cuenta de IA
+                      <span className="section-number">01</span> Connect an AI account
                     </h2>
                     <p>
-                      Elige al menos un proveedor. Puedes conectar más de uno.
+                      Choose at least one provider. You can connect several.
                     </p>
                   </div>
-                  <span className="badge required">Obligatorio</span>
+                  <span className="badge required">Required</span>
                 </div>
                 <div className="providers">
                   {(["codex", "claude", "copilot"] as Provider[]).map((id) => {
@@ -385,7 +386,7 @@ function App() {
                           </span>
                           {account?.connected && (
                             <span className="connected-label">
-                              <Check size={12} /> Conectada
+                              <Check size={12} /> Connected
                             </span>
                           )}
                         </div>
@@ -415,21 +416,21 @@ function App() {
                           {account?.login?.status === "running" ? (
                             <>
                               <LoaderCircle size={15} className="spin" />
-                              Esperando login…
+                              Waiting for sign-in…
                             </>
                           ) : account?.connected ? (
                             <>
-                              Volver a conectar <ExternalLink size={14} />
+                              Reconnect <ExternalLink size={14} />
                             </>
                           ) : (
                             <>
-                              Conectar {info.name} <ExternalLink size={14} />
+                              Connect {info.name} <ExternalLink size={14} />
                             </>
                           )}
                         </button>
                         {!account?.installed && (
                           <small className="provider-note">
-                            CLI no disponible. Ejecuta npm install.
+                            CLI unavailable. Run npm install.
                           </small>
                         )}
                         {account?.login && (
@@ -440,7 +441,7 @@ function App() {
                               account.login.status === "failed"
                             }
                           >
-                            <summary>Estado del login</summary>
+                            <summary>Sign-in status</summary>
                             <pre>{account.login.output}</pre>
                             {account.login.status === "running" && (
                               <button
@@ -452,7 +453,7 @@ function App() {
                                   })
                                 }
                               >
-                                Cancelar login
+                                Cancel sign-in
                               </button>
                             )}
                           </details>
@@ -464,15 +465,14 @@ function App() {
                 <div className="panel-note">
                   <ShieldCheck size={16} />
                   <span>
-                    El login se abre en tu navegador. Las credenciales las
-                    gestiona la CLI oficial de cada proveedor.
+                    Sign-in opens in your browser. Each provider’s official CLI manages its credentials.
                   </span>
                   <button
                     className="text-button"
                     disabled={Boolean(busy)}
                     onClick={() => void attempt("refresh", refreshAccounts)}
                   >
-                    Actualizar estado
+                    Refresh status
                   </button>
                 </div>
               </section>
@@ -480,29 +480,27 @@ function App() {
                 <div className="section-heading">
                   <div>
                     <h2>
-                      <span className="section-number">02</span> Añade tu
-                      contexto
+                      <span className="section-number">02</span> Add context
                     </h2>
                     <p>
-                      Instrucciones, conocimiento del producto y criterios que
-                      tu agente debería seguir.
+                      Give the agent product knowledge, instructions and constraints.
                     </p>
                   </div>
-                  <span className="badge">Opcional</span>
+                  <span className="badge">Optional</span>
                 </div>
                 <label className="field-label" htmlFor="context">
-                  Instrucciones para el agente
+                  Agent instructions
                 </label>
                 <textarea
                   id="context"
                   value={settings.context}
                   maxLength={30000}
                   onChange={(e) => updateSettings({ context: e.target.value })}
-                  placeholder="Por ejemplo: nuestra web es un ecommerce B2B. Prioriza la búsqueda, las fichas de producto y el carrito. Escribe los tests en castellano…"
+                  placeholder="Prioritize search, product pages and the cart in our B2B store…"
                   rows={4}
                 />
                 <div className="field-heading">
-                  <label className="field-label">Directorios de contexto</label>
+                  <label className="field-label">Context directories</label>
                   <span className="small muted">
                     Skills · Instructions · Guardrails
                   </span>
@@ -511,7 +509,7 @@ function App() {
                   <div className="directory-input" key={index}>
                     <FolderOpen size={17} />
                     <input
-                      aria-label={`Directorio ${index + 1}`}
+                      aria-label={`Directory ${index + 1}`}
                       value={directory}
                       onChange={(e) =>
                         updateSettings({
@@ -520,10 +518,10 @@ function App() {
                           ),
                         })
                       }
-                      placeholder="/Users/tu-usuario/proyecto/.agents"
+                      placeholder="/path/to/project/.agents"
                     />
                     <button
-                      aria-label={`Eliminar directorio ${index + 1}`}
+                      aria-label={`Remove directory ${index + 1}`}
                       onClick={() =>
                         updateSettings({
                           directories: settings.directories.filter(
@@ -547,15 +545,14 @@ function App() {
                 >
                   <Plus size={16} />
                   {settings.directories.length
-                    ? "Añadir otro directorio"
-                    : "Añadir directorio local"}
-                  <span>Ruta absoluta</span>
+                    ? "Add another directory"
+                    : "Add a local directory"}
+                  <span>Absolute path</span>
                 </button>
                 <div className="context-footer">
                   <p className="small muted">
                     <FileText size={14} />
-                    Se leen archivos de texto, sin modificarlos. El contexto
-                    seleccionado se envía a tu proveedor de IA.
+                    The agent reads text files and sends the selected context to your AI provider.
                   </p>
                   <button
                     className="text-button"
@@ -566,14 +563,14 @@ function App() {
                       )
                     }
                   >
-                    Revisar archivos
+                    Review files
                   </button>
                 </div>
                 {preview && (
                   <div className="context-preview">
                     <strong>
-                      {preview.files.length} archivos ·{" "}
-                      {preview.characters.toLocaleString("es")} caracteres
+                      {preview.files.length} files ·{" "}
+                      {preview.characters.toLocaleString("en")} characters
                     </strong>
                     {preview.files.map((file) => (
                       <div key={file.path} className="mono small">
@@ -591,8 +588,8 @@ function App() {
               <div className="page-footer">
                 <span className="small muted">
                   {dirty
-                    ? "Tienes cambios sin guardar."
-                    : "Solo necesitas una cuenta conectada para comenzar."}
+                    ? "You have unsaved changes."
+                    : "Connect one account to get started."}
                 </span>
                 <div className="button-group">
                   <button
@@ -600,7 +597,7 @@ function App() {
                     disabled={Boolean(busy)}
                     onClick={() => void attempt("save", saveSettings)}
                   >
-                    Guardar configuración
+                    Save settings
                   </button>
                   <button
                     className="button primary"
@@ -618,7 +615,7 @@ function App() {
                       })
                     }
                   >
-                    Empezar a explorar <ArrowRight size={16} />
+                    Start exploring <ArrowRight size={16} />
                   </button>
                 </div>
               </div>
@@ -629,12 +626,12 @@ function App() {
                 className="text-button back"
                 onClick={() => setPage("explore")}
               >
-                <ArrowLeft size={15} /> Nueva exploración
+                <ArrowLeft size={15} /> New exploration
               </button>
               <div className="page-heading result-heading">
                 <div>
                   <div className="eyebrow">
-                    EXPLORACIÓN · {scopes[run.scope].label.toUpperCase()}
+                    EXPLORATION · {scopes[run.scope].label.toUpperCase()}
                   </div>
                   <h1>{new URL(run.url).hostname}</h1>
                   <p className="mono target-url">{run.url}</p>
@@ -646,28 +643,28 @@ function App() {
               </div>
               <div className="result-stats">
                 <div>
-                  <span>PROVEEDOR</span>
+                  <span>PROVIDER</span>
                   <strong>{providerInfo[run.provider].name}</strong>
-                  <small>{run.model || "Modelo predeterminado"}</small>
+                  <small>{run.model || "Default model"}</small>
                 </div>
                 <div>
-                  <span>ACCIONES OBSERVADAS</span>
+                  <span>OBSERVED ACTIONS</span>
                   <strong>
                     {run.evidence.filter((e) => e.ok).length}
                     <small> / {scopes[run.scope].calls}</small>
                   </strong>
-                  <small>Registradas por Playwright</small>
+                  <small>Recorded by Playwright</small>
                 </div>
                 <div>
-                  <span>FLUJOS GENERADOS</span>
+                  <span>GENERATED FLOWS</span>
                   <strong>{run.report?.flows.length ?? "—"}</strong>
-                  <small>Pendientes de ejecución</small>
+                  <small>Awaiting execution</small>
                 </div>
                 <div>
-                  <span>CONTEXTO APLICADO</span>
+                  <span>APPLIED CONTEXT</span>
                   <strong>
                     {run.contextFiles.length}
-                    <small> archivos</small>
+                    <small> files</small>
                   </strong>
                   <small>{readableDate(run.createdAt)}</small>
                 </div>
@@ -680,9 +677,9 @@ function App() {
                     </h2>
                     <p>
                       {working
-                        ? "El agente explora la web y recoge su comportamiento actual."
+                        ? "The agent is exploring the site and recording its behavior."
                         : run.report?.summary ||
-                          "Consulta las evidencias y el diagnóstico de esta exploración."}
+                          "Review the evidence and diagnostics for this exploration."}
                     </p>
                   </div>
                   {working ? (
@@ -695,7 +692,7 @@ function App() {
                         })
                       }
                     >
-                      <Square size={13} /> Detener
+                      <Square size={13} /> Stop
                     </button>
                   ) : run.report ? (
                     <button
@@ -703,12 +700,12 @@ function App() {
                       onClick={() => void attempt("download", download)}
                       disabled={Boolean(busy)}
                     >
-                      <ArrowDownToLine size={16} /> Descargar suite
+                      <ArrowDownToLine size={16} /> Download suite
                     </button>
                   ) : null}
                 </div>
                 {run.error && <div className="alert error">{run.error}</div>}
-                <a className="button secondary diagnosis-link" href={"/diagnostico/"+run.id}>Ver diagnóstico y traza</a>
+                <a className="button secondary diagnosis-link" href={"/diagnostico/"+run.id}>View diagnostics and trace</a>
                 {working && (
                   <div className="progress-track">
                     <span />
@@ -716,15 +713,15 @@ function App() {
                 )}
                 <details className="evidence-list" open={working}>
                   <summary>
-                    <Terminal size={15} /> Recorrido observado{" "}
-                    <span>{run.evidence.length} eventos</span>
+                    <Terminal size={15} /> Observed journey{" "}
+                    <span>{run.evidence.length} events</span>
                     <ChevronDown size={15} />
                   </summary>
                   {!run.evidence.length && (
                     <p className="muted small">
                       {working
-                        ? "Esperando a que el agente conecte con Playwright…"
-                        : "Sin evidencia de navegación."}
+                        ? "Waiting for the agent to connect to Playwright…"
+                        : "No navigation evidence available."}
                     </p>
                   )}
                   {run.evidence.map((event) => (
@@ -737,10 +734,10 @@ function App() {
                           #{event.id} {event.tool.replace("browser_", "")}
                         </span>
                         {event.externalUrl && (
-                          <span className="badge">Salida del dominio</span>
+                          <span className="badge">External destination</span>
                         )}
                         <time>
-                          {new Date(event.at).toLocaleTimeString("es")}
+                          {new Date(event.at).toLocaleTimeString("en")}
                         </time>
                       </summary>
                       <pre>{event.detail}</pre>
@@ -754,14 +751,13 @@ function App() {
                   <div className="section-heading">
                     <div>
                       <h2>
-                        Comportamientos caracterizados{" "}
+                        Characterized behavior{" "}
                         <span className="count-badge">
                           {run.report.flows.length}
                         </span>
                       </h2>
                       <p>
-                        Cada flujo conserva lo observado. Los tests están
-                        generados, aún no ejecutados.
+                        Each flow records observed behavior. Run the generated tests to verify it.
                       </p>
                     </div>
                     <Code2 size={21} />
@@ -773,23 +769,23 @@ function App() {
                           {String(index + 1).padStart(2, "0")}
                         </span>
                         <strong>{flow.title}</strong>
-                        <span className="badge">Generado</span>
+                        <span className="badge">Generated</span>
                         <ChevronDown size={17} />
                       </summary>
                       <div className="flow-body">
-                        <h4>Pasos del recorrido</h4>
+                        <h4>Steps</h4>
                         <ol>
                           {flow.steps.map((step, i) => (
                             <li key={i}>{step}</li>
                           ))}
                         </ol>
-                        <h4>Resultado observado</h4>
+                        <h4>Observed outcome</h4>
                         <p>{flow.observed}</p>
                         <p className="small muted">
-                          Evidencias:{" "}
+                          Evidence:{" "}
                           {flow.evidenceIds.map((id) => "#" + id).join(", ")}
                         </p>
-                        <h4>Test Playwright</h4>
+                        <h4>Playwright test</h4>
                         <pre className="code-preview">{flow.testCode}</pre>
                       </div>
                     </details>
@@ -798,7 +794,7 @@ function App() {
               )}
               {Boolean(run.report?.gaps.length || run.warnings.length) && (
                 <section className="panel limits">
-                  <h2>Alcance y pendientes</h2>
+                  <h2>Coverage and remaining work</h2>
                   <ul>
                     {[...run.warnings, ...(run.report?.gaps ?? [])].map(
                       (gap, i) => (
@@ -810,7 +806,7 @@ function App() {
               )}
               {!!run.logs.length && (
                 <details className="panel diagnostics">
-                  <summary>Diagnóstico del proveedor</summary>
+                  <summary>Provider diagnostics</summary>
                   <pre>{run.logs.join("")}</pre>
                 </details>
               )}
@@ -819,12 +815,11 @@ function App() {
             <>
               <div className="page-heading">
                 <div className="eyebrow">
-                  02 — DEL COMPORTAMIENTO A LOS TESTS
+                  CHARACTERIZATION
                 </div>
-                <h1>Descubre lo que tu web hace.</h1>
+                <h1>Discover what your site does.</h1>
                 <p>
-                  Un agente recorre tu producto y convierte los flujos
-                  existentes en tests de caracterización.
+                  An agent explores your product and turns existing flows into characterization tests.
                 </p>
               </div>
               <div className="explore-layout">
@@ -844,16 +839,15 @@ function App() {
                     <div className="section-heading">
                       <div>
                         <h2>
-                          <Globe2 size={19} /> La web que vamos a explorar
+                          <Globe2 size={19} /> Explore a website
                         </h2>
                         <p>
-                          Una URL pública o un entorno que puedas abrir desde
-                          este equipo.
+                          Enter a public URL or an environment you can access from this computer.
                         </p>
                       </div>
                     </div>
                     <label className="field-label" htmlFor="url">
-                      URL de inicio <span className="required-star">*</span>
+                      Starting URL <span className="required-star">*</span>
                     </label>
                     <div className="url-input">
                       <Globe2 size={18} />
@@ -861,7 +855,7 @@ function App() {
                         id="url"
                         type="url"
                         required
-                        placeholder="https://tu-producto.com"
+                        placeholder="https://example.com"
                         value={input.url}
                         onChange={(e) =>
                           setInput({ ...input, url: e.target.value })
@@ -869,8 +863,8 @@ function App() {
                       />
                     </div>
                     <label className="field-label spaced" htmlFor="prompt">
-                      ¿En qué quieres que se centre?{" "}
-                      <span className="muted normal">Opcional</span>
+                      What should the agent focus on?{" "}
+                      <span className="muted normal">Optional</span>
                     </label>
                     <textarea
                       id="prompt"
@@ -880,16 +874,16 @@ function App() {
                       onChange={(e) =>
                         setInput({ ...input, prompt: e.target.value })
                       }
-                      placeholder="Explora el catálogo, los filtros y la ficha de producto. Incluye los estados vacíos y las validaciones que encuentres…"
+                      placeholder="Explore the catalog, filters and product pages. Include empty states and validation messages…"
                     />
                   </section>
                   <section className="panel">
                     <div className="section-heading">
                       <div>
                         <h2>
-                          <Layers3 size={19} /> Profundidad de la cobertura
+                          <Layers3 size={19} /> Coverage depth
                         </h2>
-                        <p>Cuánto terreno quieres que recorra el agente.</p>
+                        <p>Choose how thoroughly the agent explores your site.</p>
                       </div>
                     </div>
                     <div className="scope-grid">
@@ -927,7 +921,7 @@ function App() {
                           </div>
                           <strong>{scope.label}</strong>
                           <p>{scope.description}</p>
-                          <small>Hasta {scope.calls} acciones</small>
+                          <small>Up to {scope.calls} actions</small>
                         </label>
                       ))}
                     </div>
@@ -936,13 +930,13 @@ function App() {
                     <div className="section-heading">
                       <div>
                         <h2>
-                          <Sparkles size={18} /> Configura el agente
+                          <Sparkles size={18} /> Configure the agent
                         </h2>
                       </div>
                     </div>
                     <div className="agent-fields">
                       <label className="field-label">
-                        Proveedor
+                        Provider
                         <select
                           value={input.provider}
                           onChange={(e) =>
@@ -966,21 +960,21 @@ function App() {
                                 {providerInfo[id].name}
                                 {accounts.find((a) => a.id === id)?.connected
                                   ? ""
-                                  : " · Sin conectar"}
+                                  : " · Disconnected"}
                               </option>
                             ),
                           )}
                         </select>
                       </label>
                       <label className="field-label">
-                        Modelo
+                        Model
                         <input
                           value={input.model}
                           onChange={(e) =>
                             setInput({ ...input, model: e.target.value })
                           }
                           list="models"
-                          placeholder="Predeterminado del proveedor"
+                          placeholder="Provider default"
                         />
                         <datalist id="models">
                           {models.map((model) => (
@@ -991,7 +985,7 @@ function App() {
                         </datalist>
                       </label>
                       <label className="field-label">
-                        Esfuerzo de razonamiento
+                        Reasoning effort
                         <select
                           value={input.effort}
                           onChange={(e) =>
@@ -1001,18 +995,16 @@ function App() {
                             })
                           }
                         >
-                          <option value="default">Predeterminado</option>
-                          <option value="low">Bajo</option>
-                          <option value="medium">Medio</option>
-                          <option value="high">Alto</option>
-                          <option value="xhigh">Muy alto</option>
+                          <option value="default">Default</option>
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                          <option value="xhigh">Very high</option>
                         </select>
                       </label>
                     </div>
                     <p className="small muted model-note">
-                      Puedes indicar el ID de cualquier modelo disponible en tu
-                      cuenta. Los niveles de esfuerzo admitidos dependen del
-                      modelo.
+                      Enter any model ID available to your account. Supported reasoning levels depend on the model.
                     </p>
                     <label className="checkbox-row">
                       <input
@@ -1022,25 +1014,24 @@ function App() {
                           setInput({ ...input, headed: e.target.checked })
                         }
                       />
-                      <span>Mostrar el navegador durante la exploración</span>
+                      <span>Show the browser during exploration</span>
                     </label>
                   </section>
                   {!connected.length && (
                     <div className="alert">
-                      <span>Conecta una cuenta de IA para comenzar.</span>
+                      <span>Connect an AI account to get started.</span>
                       <button
                         type="button"
                         className="text-button"
                         onClick={() => setPage("settings")}
                       >
-                        Ir a configuración <ArrowRight size={14} />
+                        Open settings <ArrowRight size={14} />
                       </button>
                     </div>
                   )}
                   <div className="page-footer">
                     <span className="small muted">
-                      {scopes[input.scope].minutes} min máximo · Puedes
-                      detenerlo cuando quieras.
+                      {scopes[input.scope].minutes} min maximum · Stop at any time.
                     </span>
                     <button
                       className="button primary launch"
@@ -1056,7 +1047,7 @@ function App() {
                       ) : (
                         <Play size={15} />
                       )}{" "}
-                      Iniciar caracterización
+                      Start characterization
                     </button>
                   </div>
                 </form>
@@ -1080,57 +1071,55 @@ function App() {
                       <Code2 size={14} /> Playwright
                     </span>
                   </div>
-                  <div className="eyebrow">QUÉ TE LLEVAS</div>
+                  <div className="eyebrow">EXPLORATION OUTPUT</div>
                   <h3>
-                    Una fotografía funcional
+                    A functional snapshot
                     <br />
-                    de tu producto.
+                    of your product.
                   </h3>
                   <p>
-                    Los tests de caracterización capturan cómo se comporta la
-                    web hoy, incluso cuando algo resulta inesperado.
+                    Characterization tests capture how the site behaves today, including unexpected outcomes.
                   </p>
                   <ul className="outcomes">
                     <li>
                       <Check size={15} />
-                      Flujos y resultados observados
+                      Observed flows and outcomes
                     </li>
                     <li>
                       <Check size={15} />
-                      Tests Playwright con aserciones
+                      Playwright tests with assertions
                     </li>
                     <li>
                       <Check size={15} />
-                      Evidencias de cada recorrido
+                      Evidence for each journey
                     </li>
                     <li>
                       <Check size={15} />
-                      Límites y cobertura pendiente
+                      Coverage and remaining gaps
                     </li>
                   </ul>
                   <div className="aside-divider" />
                   <div className="context-summary">
                     <FolderOpen size={17} />
                     <div>
-                      <strong>Tu contexto está presente</strong>
+                      <strong>Exploration context</strong>
                       <span>
-                        {settings.directories.length} directorios ·{" "}
+                        {settings.directories.length} directories ·{" "}
                         {settings.context
-                          ? "Con instrucciones"
-                          : "Sin instrucciones adicionales"}
+                          ? "Instructions included"
+                          : "No additional instructions"}
                       </span>
                       <button
                         className="text-button"
                         onClick={() => setPage("settings")}
                       >
-                        Editar contexto <ArrowRight size={13} />
+                        Edit context <ArrowRight size={13} />
                       </button>
                     </div>
                   </div>
                   <p className="domain-note">
                     <ExternalLink size={14} />
-                    Se permiten rutas y subdominios propios. Las salidas a otros
-                    dominios se documentan como casos.
+                    The agent follows routes and subdomains within the site. External redirects are recorded as cases.
                   </p>
                 </aside>
               </div>
@@ -1138,7 +1127,7 @@ function App() {
           )}
           <footer className="main-footer">
             <Radar size={13} /> Characterize{" "}
-            <span>Observa. Documenta. Conserva el comportamiento.</span>
+            <span>Record how your site behaves today.</span>
           </footer>
         </main>
       </div>

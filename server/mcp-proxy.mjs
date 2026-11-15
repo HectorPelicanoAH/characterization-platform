@@ -74,10 +74,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const id = ++count;
   const tool = request.params.name;
   try {
-    if (!allowed.has(tool)) throw new Error("Herramienta fuera del alcance.");
+    if (!allowed.has(tool)) throw new Error("Tool outside the exploration scope.");
     if (count > config.maxCalls)
       throw new Error(
-        "Presupuesto de exploración agotado. Finaliza el informe con lo observado.",
+        "Exploration budget exhausted. Finish the report using recorded observations.",
       );
     if (
       externalUrl &&
@@ -89,20 +89,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ].includes(tool)
     )
       throw new Error(
-        `Salida del dominio documentada: ${externalUrl}. Registra el caso y vuelve a la web de origen antes de continuar.`,
+        `External redirect recorded: ${externalUrl}. Record the case and return to the original site before continuing.`,
       );
     if (
       tool === "browser_tabs" &&
       !["list", "select", "close"].includes(request.params.arguments?.action)
     )
       throw new Error(
-        "Solo se permite listar, seleccionar o cerrar pestañas. Abre páginas con browser_navigate.",
+        "List, select or close tabs here. Open pages with browser_navigate.",
       );
     if (tool === "browser_navigate") {
       const url = new URL(String(request.params.arguments?.url));
       if (!sameDomain(url.href, config.origin) || url.username || url.password)
         throw new Error(
-          "La navegación explícita debe mantenerse en el dominio configurado. Las redirecciones externas se documentan como casos.",
+          "Explicit navigation must stay on the configured domain. Document external redirects as cases.",
         );
     }
     if (!traceAttempted) {
@@ -145,7 +145,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ...content,
         {
           type: "text",
-          text: `CHARACTERIZATION_EVIDENCE_ID=${id}. Cita este ID solo para comportamientos observados en esta respuesta.${externalUrls.length ? ` CASO DE SALIDA DEL DOMINIO: ${externalUrls.join(", ")}. Documenta la acción que lo provoca y cada destino como flujo de caracterización (con aserción de URL), sin explorar los destinos externos. Vuelve atrás o selecciona la pestaña de origen para continuar.` : ""}`,
+          text: `CHARACTERIZATION_EVIDENCE_ID=${id}. Cite this ID only for behavior observed in this response.${externalUrls.length ? ` EXTERNAL REDIRECT: ${externalUrls.join(", ")}. Document the triggering action and each destination as a flow with a URL assertion. Return to the original tab or go back before continuing.` : ""}`,
         },
       ],
     };

@@ -22,7 +22,7 @@ export class Store {
     for (const run of this.runs())
       if (run.status === "running") {
         run.status = "interrupted";
-        run.phase = "Interrumpida al reiniciar";
+        run.phase = "Interrupted by restart";
         run.finishedAt = new Date().toISOString();
         this.saveRun(run);
       }
@@ -37,7 +37,7 @@ export class Store {
     saveJSON(join(this.root, "settings.json"), settings);
   }
   runDir(id: string) {
-    if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Identificador inválido");
+    if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid identifier");
     return join(this.root, "runs", id);
   }
   exclusions(id: string): { recent: boolean; scenarios: string[] } {

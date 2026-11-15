@@ -26,13 +26,13 @@ export class Runs {
   async start(input: RunInput) {
     if (this.active || this.starting)
       throw new Error(
-        "Ya hay una exploración en curso. Cancélala o espera a que termine.",
+        "An exploration is already running. Stop it or wait for it to finish.",
       );
     this.starting = true;
     try {
       const account = await this.accounts.status(input.provider);
       if (!account.connected)
-        throw new Error("Conecta una cuenta de IA antes de explorar.");
+        throw new Error("Connect an AI account before starting an exploration.");
       const settings = this.store.settings();
       const context = await collectContext(settings.directories);
       const run: Run = {
@@ -40,7 +40,7 @@ export class Runs {
         id: randomUUID(),
         createdAt: new Date().toISOString(),
         status: "running",
-        phase: "Preparando agente",
+        phase: "Preparing the agent",
         contextFiles: context.files.map((f) => f.path),
         warnings: context.warnings,
         evidence: [],
@@ -96,7 +96,7 @@ export class Runs {
     const dir = this.store.runDir(run.id);
     try {
       const command = commandArgs(run, dir, prompt);
-      run.phase = "Explorando con Playwright";
+      run.phase = "Exploring with Playwright";
       this.store.saveRun(run);
       const result = await execute(binaryFor(run.provider)!, command.args, {
         cwd: dir,
@@ -109,12 +109,12 @@ export class Runs {
           if (run.logs.length > 30) run.logs.shift();
         },
       });
-      if (abort.signal.aborted) throw new Error("Cancelado");
+      if (abort.signal.aborted) throw new Error("Cancelled");
       if (result.code !== 0)
         throw new Error(
-          `El proveedor terminó con código ${result.code}. ${clean(result.stderr || result.stdout).slice(-1800)}`,
+          `Provider exited with code ${result.code}. ${clean(result.stderr || result.stdout).slice(-1800)}`,
         );
-      run.phase = "Comprobando evidencias";
+      run.phase = "Checking evidence";
       const response =
         run.provider === "codex"
           ? readFileSync(join(dir, "response.json"), "utf8")
@@ -126,7 +126,7 @@ export class Runs {
       if (!report.flows.length)
         throw new Error(
           report.gaps.join("\n") ||
-            "No se han caracterizado flujos. " + report.summary,
+            "No flows were characterized. " + report.summary,
         );
       run.report = report;
       saveJSON(join(dir, "report.json"), report);
@@ -136,13 +136,13 @@ export class Runs {
         }),
       );
       run.status = "completed";
-      run.phase = "Caracterización generada";
+      run.phase = "Characterization complete";
     } catch (error) {
       run.status = abort.signal.aborted ? "cancelled" : "failed";
       run.phase =
         run.status === "cancelled"
-          ? "Exploración cancelada"
-          : "No se pudo completar";
+          ? "Exploration cancelled"
+          : "Exploration incomplete";
       run.error = clean((error as Error).message);
     } finally {
       run.finishedAt = new Date().toISOString();
@@ -154,7 +154,7 @@ export class Runs {
   }
   cancel(id: string) {
     if (this.active?.run.id === id) this.active.abort.abort();
-    else throw new Error("Esta exploración no está en curso.");
+    else throw new Error("This exploration is no longer running.");
   }
   shutdown() {
     this.active?.abort.abort();

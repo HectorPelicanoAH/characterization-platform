@@ -39,7 +39,7 @@ export function execute(
 ) {
   return new Promise<{ code: number; stdout: string; stderr: string }>(
     (resolve, reject) => {
-      if (options.signal?.aborted) return reject(new Error("Cancelado"));
+      if (options.signal?.aborted) return reject(new Error("Cancelled"));
       const env = { ...process.env, ...options.env };
       delete env.CLAUDECODE;
       const child = spawn(binary, args, {
@@ -83,12 +83,12 @@ export function execute(
       });
       child.on("close", (code) => {
         cleanup();
-        if (options.signal?.aborted) reject(new Error("Cancelado"));
+        if (options.signal?.aborted) reject(new Error("Cancelled"));
         else if (timedOut)
-          reject(new Error("Se ha agotado el tiempo de ejecución."));
+          reject(new Error("Execution timed out."));
         else if (overflow)
           reject(
-            new Error("La salida del proveedor supera el límite de 8 MB."),
+            new Error("Provider output exceeds the 8 MB limit."),
           );
         else resolve({ code: code ?? 1, stdout, stderr });
       });

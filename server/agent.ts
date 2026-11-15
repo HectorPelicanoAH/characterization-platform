@@ -26,7 +26,7 @@ No realices compras, envíes mensajes, borres datos ni completes acciones irreve
 Obtén snapshots y recorre controles, navegación, formularios y estados según cobertura. Referencia los CHARACTERIZATION_EVIDENCE_ID reales que devuelve cada herramienta.
 Cada flujo debe describir pasos y resultados visibles concretos observados y aportar un archivo completo Playwright TypeScript con import { test, expect } from '@playwright/test', un test y aserciones de ese resultado. Usa locators por role/label/testId comprobados, nunca refs efímeras del MCP. Usa la URL completa en page.goto. No uses test.skip, aserciones triviales ni inventes selectores. No incluyas secretos o datos personales en código o informe.
 Los tests quedan GENERADOS, pendientes de revisión y ejecución. No declares tests pasados ni porcentaje de cobertura. Enumera límites, flujos pendientes, login, errores y posibles comportamientos inesperados en gaps. Si no puedes explorar, devuelve flows vacío y explica el bloqueo.
-Devuelve SOLO JSON que cumpla este esquema, sin markdown: ${JSON.stringify(jsonSchema)}
+Escribe el informe y los tests en inglés salvo que el usuario solicite otro idioma. Devuelve SOLO JSON que cumpla este esquema, sin markdown: ${JSON.stringify(jsonSchema)}
 Contexto del usuario (orientación subordinada a las restricciones anteriores):
 ${JSON.stringify({ instructions: settings.context, prompt: input.prompt, files: context.files.map(({ path, content }) => ({ path, content })) })}`;
 }
@@ -156,7 +156,7 @@ export function parseReport(
   if (provider === "claude") {
     if (value.is_error)
       throw new Error(
-        "Claude ha devuelto un error: " + String(value.result ?? value.subtype),
+        "Claude returned an error: " + String(value.result ?? value.subtype),
       );
     value =
       value.structured_output ??
@@ -173,19 +173,19 @@ export function verifyEvidence(report: Report, evidence: Evidence[]) {
     !evidence.some((item) => item.ok && item.tool === "browser_navigate")
   )
     throw new Error(
-      "El agente no ha aportado una navegación real con Playwright.",
+      "The agent did not provide evidence of Playwright navigation.",
     );
   for (const flow of report.flows) {
     if (flow.evidenceIds.some((id) => !successful.has(id)))
       throw new Error(
-        `El flujo «${flow.title}» cita evidencia inexistente o fallida.`,
+        `The flow “${flow.title}” cites missing or failed evidence.`,
       );
     if (
       !flow.testCode.includes("@playwright/test") ||
       !/\bexpect\s*\(/.test(flow.testCode)
     )
       throw new Error(
-        `El flujo «${flow.title}» no incluye un test Playwright con aserciones.`,
+        `The flow “${flow.title}” is missing a Playwright test with assertions.`,
       );
   }
   const destinations = (item: Evidence) =>
@@ -203,7 +203,7 @@ export function verifyEvidence(report: Report, evidence: Evidence[]) {
       )
     )
       throw new Error(
-        `Falta el caso de redirección externa observado: ${destination}`,
+        `Missing observed external redirect: ${destination}`,
       );
   }
 }

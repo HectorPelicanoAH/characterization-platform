@@ -161,7 +161,7 @@ test("report parsing accepts native structured responses and rejects invalid or 
           externalUrl: "https://external.test/",
         },
       ]),
-    /Falta el caso/,
+    /Missing observed/,
   );
 });
 
@@ -199,11 +199,11 @@ test("worker cancellation and timeout terminate actual child processes", async (
     { signal: abort.signal },
   );
   setTimeout(() => abort.abort(), 100);
-  await assert.rejects(pending, /Cancelado/);
+  await assert.rejects(pending, /Cancelled/);
   await assert.rejects(
     execute(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
       timeout: 100,
     }),
-    /tiempo/,
+    /timed out/,
   );
 });

@@ -8,10 +8,10 @@ function identify(raw: string, title?: string): Screen | undefined {
     const path = (u.hash.match(/^#!?(\/[^?]*)/)?.[1] ?? u.pathname).replace(/\/+$/, "") || "/";
     const catalogRoute = path.match(/^\/[a-z]{2}\/[a-z]{2}\/(c|p|search)(?:\/|$)/);
     if (catalogRoute) {
-      const labels: Record<string,string> = { c:"Listado de productos", p:"Ficha de producto", search:"Búsqueda" };
+      const labels: Record<string,string> = { c:"Product listing", p:"Product details", search:"Search" };
       return {key:u.origin+"/:"+catalogRoute[1], label:labels[catalogRoute[1]]};
     }
-    return {key:u.origin+path, label:title?.trim() || (path === "/" ? "Inicio" : path)};
+    return {key:u.origin+path, label:title?.trim() || (path === "/" ? "Home" : path)};
   } catch { return; }
 }
 

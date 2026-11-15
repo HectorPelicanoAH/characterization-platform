@@ -27,7 +27,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   app.use((req, res, next) => {
     if (!hosts.has(req.headers.host ?? ""))
-      return res.status(403).json({ error: "Host no permitido." });
+      return res.status(403).json({ error: "Host not allowed." });
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Frame-Options", "DENY");
@@ -41,11 +41,11 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
         req.headers.origin,
       )
     )
-      return res.status(403).json({ error: "Origen no permitido." });
+      return res.status(403).json({ error: "Origin not allowed." });
     if (req.headers["x-characterize"] !== "1")
       return res
         .status(403)
-        .json({ error: "Abre la aplicación local para acceder." });
+        .json({ error: "Open the local application to access this endpoint." });
     next();
   });
   app.use(express.json({ limit: "256kb" }));
@@ -104,23 +104,23 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   library(); // Recover earlier runs on startup without inference.
   app.delete("/api/recent/:id",(req,res)=>{
     const run=store.run(req.params.id);
-    if(!run)return res.status(404).json({error:"Exploración no encontrada"});
-    if(run.status==="running")return res.status(409).json({error:"Espera a que termine la exploración."});
+    if(!run)return res.status(404).json({error:"Exploration not found"});
+    if(run.status==="running")return res.status(409).json({error:"Wait for the exploration to finish."});
     store.exclude(run.id);
     res.json({removed:true});
   });
   app.delete("/api/library/:id/:scenario",(req,res)=>{
     const run=runs.get(req.params.id);
-    if(!run)return res.status(404).json({error:"Exploración no encontrada"});
-    if(run.status==="running")return res.status(409).json({error:"Espera a que termine la exploración."});
-    if(!libraryEntry(store,run).scenarios.some(s=>s.id===req.params.scenario))return res.status(404).json({error:"Escenario no encontrado"});
+    if(!run)return res.status(404).json({error:"Exploration not found"});
+    if(run.status==="running")return res.status(409).json({error:"Wait for the exploration to finish."});
+    if(!libraryEntry(store,run).scenarios.some(s=>s.id===req.params.scenario))return res.status(404).json({error:"Scenario not found"});
     store.exclude(run.id,req.params.scenario);
     res.json(libraryEntry(store,run));
   });
   app.get("/api/library", (_req,res)=>res.json(library()));
   app.get("/api/runs/:id/scenarios", (req,res)=>{
     const run=runs.get(req.params.id);
-    if(!run) return res.status(404).json({error:"Exploración no encontrada"});
+    if(!run) return res.status(404).json({error:"Exploration not found"});
     res.json(libraryEntry(store,run));
   });
   app.get("/api/runs", (_req, res) =>
@@ -138,14 +138,14 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     const input = runInputSchema.parse(req.body);
     if (hosts.has(new URL(input.url).host))
       throw new Error(
-        "Elige la web que quieres caracterizar, no esta plataforma.",
+        "Enter the URL of the site you want to characterize.",
       );
     res.status(201).json(await runs.start(input));
   });
   app.get("/api/runs/:id", (req, res) => {
     const run = runs.get(req.params.id);
     if (!run)
-      return res.status(404).json({ error: "Exploración no encontrada." });
+      return res.status(404).json({ error: "Exploration not found." });
     res.json(run);
   });
   app.post("/api/runs/:id/cancel", (req, res) => {
@@ -157,7 +157,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     if (!run?.report)
       return res
         .status(404)
-        .json({ error: "Todavía no hay resultados para exportar." });
+        .json({ error: "No results available to export yet." });
     const files: Record<string, Uint8Array> = {
       "report.json": strToU8(JSON.stringify(run.report, null, 2)),
       "evidence.json": strToU8(JSON.stringify(run.evidence, null, 2)),
@@ -178,7 +178,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
         "import { defineConfig } from '@playwright/test';\nexport default defineConfig({ testDir: './tests', use: { trace: 'retain-on-failure' }, reporter: [['list'], ['html', { open: 'never' }]] });\n",
       ),
       "README.md": strToU8(
-        `# Caracterización de ${run.url}\n\n${run.report.summary}\n\nTests GENERADOS, pendientes de revisión y ejecución. La evidencia describe observaciones del agente, no certifica que el código pase. Revisa los tests antes de ejecutarlos.\n\nInstalación: npm install\nNavegador: npx playwright install chromium\nEjecución: npm test\n\nLimitaciones:\n${run.report.gaps.map((g) => "- " + g).join("\n")}\n`,
+        `# Characterization of ${run.url}\n\n${run.report.summary}\n\nReview the generated tests against the recorded evidence before running the suite.\n\nInstall: npm install\nBrowser: npx playwright install chromium\nRun: npm test\n\nCoverage gaps:\n${run.report.gaps.map((g) => "- " + g).join("\n")}\n`,
       ),
     };
     run.report.flows.forEach((flow, i) => {
@@ -192,7 +192,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     res.send(Buffer.from(zipSync(files)));
   });
   app.use("/api", (_req, res) =>
-    res.status(404).json({ error: "Ruta no encontrada." }),
+    res.status(404).json({ error: "Route not found." }),
   );
   app.use(
     (

@@ -29,7 +29,7 @@ export async function codexModels(cwd: string): Promise<ModelOption[]> {
         finish(
           [],
           new Error(
-            "No se ha podido consultar el catálogo. Puedes escribir el ID del modelo.",
+            "Model catalog unavailable. Enter a model ID manually.",
           ),
         ),
       15000,

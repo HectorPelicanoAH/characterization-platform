@@ -1,3 +1,4 @@
+import { ThemeToggle } from "./ThemeToggle";
 import React, { useEffect, useState } from "react";
 import type { Evidence } from "../shared/model";
 type Diagnosis = {
@@ -17,7 +18,7 @@ export function Diagnosis({ id }: { id: string }) {
       headers: { "X-Characterize": "1" },
     })
       .then(async (r) => {
-        if (!r.ok) throw Error("No se pudo cargar el diagnóstico.");
+        if (!r.ok) throw Error("Could not load diagnostics.");
         return r.json();
       })
       .then((d) => {
@@ -32,27 +33,26 @@ export function Diagnosis({ id }: { id: string }) {
   }, [id]);
   return (
     <main>
-      <a href="/">← Volver al espacio de trabajo</a>
+      <ThemeToggle /> <a href="/">← Back to workspace</a>
       <div className="page-heading">
-        <h1>Diagnóstico de la exploración</h1>
+        <h1>Exploration diagnostics</h1>
         {data && <p>{data.url}</p>}
       </div>
       {err && <p role="alert">{err}</p>}
-      {!data && !err && <p>Cargando diagnóstico…</p>}
+      {!data && !err && <p>Loading diagnostics…</p>}
       {data && (
         <>
           <section className="panel">
             <h2>
               {data.issues.length
-                ? "Evidencia insuficiente para validar el informe"
+                ? "Insufficient evidence to validate the report"
                 : data.error
-                  ? "La exploración no se completó"
-                  : "Resultado de la exploración"}
+                  ? "Exploration incomplete"
+                  : "Exploration result"}
             </h2>
-            <p>{data.error ?? "No se registró un fallo de ejecución."}</p>
+            <p>{data.error ?? "No execution failure was recorded."}</p>
             <p>
-              Un error del agente o una acción de navegador fallida no demuestra
-              por sí solo un defecto en la web.
+              Review the evidence to determine whether a failed browser action reflects a defect in the site.
             </p>
             {data.issues.map((s) => (
               <div key={s.title}>
@@ -60,9 +60,9 @@ export function Diagnosis({ id }: { id: string }) {
                 {s.ids.map((id) => (
                   <span key={id}>
                     {data.failed.some((e) => e.id === id) ? (
-                      <a href={"#evento-" + id}>Acción fallida #{id}</a>
+                      <a href={"#evento-" + id}>Failed action #{id}</a>
                     ) : (
-                      "Evidencia ausente #" + id
+                      "Missing evidence #" + id
                     )}{" "}
                   </span>
                 ))}
@@ -74,7 +74,7 @@ export function Diagnosis({ id }: { id: string }) {
             {data.viewer ? (
               <>
                 <a href={data.viewer} target="_blank" rel="noreferrer">
-                  Abrir visor en otra pestaña ↗
+                  Open viewer in another tab ↗
                 </a>
                 <iframe
                   title="Playwright Trace Viewer"
@@ -84,18 +84,16 @@ export function Diagnosis({ id }: { id: string }) {
               </>
             ) : (
               <p>
-                No hay traza nativa guardada para esta ejecución. Puedes
-                consultar los errores originales abajo. Las nuevas exploraciones
-                graban la traza localmente desde la primera acción.
+                No native trace was saved for this run. Review the original errors below. New explorations record a local trace from the first action.
               </p>
             )}
           </section>
           <section className="panel">
-            <h2>Acciones fallidas ({data.failed.length})</h2>
+            <h2>Failed actions ({data.failed.length})</h2>
             {data.failed.map((e) => (
               <article id={"evento-" + e.id} key={e.id}>
                 <h4>
-                  #{e.id} · {e.tool} · {new Date(e.at).toLocaleTimeString("es")}
+                  #{e.id} · {e.tool} · {new Date(e.at).toLocaleTimeString("en")}
                 </h4>
                 <pre
                   style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}

@@ -21,7 +21,7 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
     const parsed=reportSchema.shape.flows.element.safeParse(raw);
     if(!parsed.success) continue;
     const f=parsed.data;
-    const state=f.evidenceIds.every(id=>ok.has(id))?"Documentado":"Revisar evidencia";
+    const state=f.evidenceIds.every(id=>ok.has(id))?"Documented":"Review evidence";
     scenarios.push({title:f.title,state,ids:f.evidenceIds,gherkin:[
       "Escenario: "+line(f.title),"  Dado que la URL inicial es "+run.url,
       ...f.steps.map((s,i)=>(i?"  Y ":"  Cuando ")+line(s)),
@@ -36,19 +36,29 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
       const title=e.detail.match(/^- Page Title: (.+)/m)?.[1];
       if(!url || !title || previous===url) continue;
       const start=previous||run.url; previous=url;
-      scenarios.push({title:line(title),state:"Borrador observado",ids:[e.id],gherkin:
+      scenarios.push({title:line(title),state:"Observed draft",ids:[e.id],gherkin:
         "Escenario: "+line(title)+"\n  Dado que el recorrido parte de "+start+"\n  Cuando se observa la página tras "+e.tool+"\n  Entonces la URL visible es "+url+"\n  Y el título es "+line(title)});
     }
   }
   const classified=scenarios.map(s=>{
     const screens=screensFor(s.ids,events);
-    const group=screens.length>1?"Smoke":screens[0]?.label??"Sin pantalla identificada";
+    const group=screens.length>1?"Smoke":screens[0]?.label??"Unknown screen";
     const groupKey=screens.length>1?"smoke":screens[0]?.key??"unknown";
-    return {...s,screens,group,groupKey,id:createHash("sha256").update(JSON.stringify([s.title,s.ids,s.gherkin])).digest("hex")};
+    // Preserve scenario IDs (including existing exclusions) across display languages.
+    const gherkin = s.gherkin.split("\n").map(step => step
+      .replace(/^Escenario: /, "Scenario: ")
+      .replace(/^  Dado que la URL inicial es /, "  Given the starting URL is ")
+      .replace(/^  Dado que el recorrido parte de /, "  Given the journey starts at ")
+      .replace(/^  Cuando se observa la página tras /, "  When the page is observed after ")
+      .replace(/^  Entonces la URL visible es /, "  Then the visible URL is ")
+      .replace(/^  Y el título es /, "  And the title is ")
+      .replace(/^  Cuando /, "  When ").replace(/^  Entonces /, "  Then ").replace(/^  Y /, "  And ")
+    ).join("\n");
+    return {...s,gherkin,screens,group,groupKey,id:createHash("sha256").update(JSON.stringify([s.title,s.ids,s.gherkin])).digest("hex")};
   }).sort((a,b)=>a.group.localeCompare(b.group,"es")||a.title.localeCompare(b.title,"es"));
   const exclusions=new Set(store.exclusions(run.id).scenarios);
   const visible=classified.filter(s=>!exclusions.has(s.id));
-  const feature=["# language: es","Característica: Recorrido de "+host,...visible.map(s=>"\n  # "+line(s.group)+" · "+s.state+" · Evidencias: "+s.ids.join(", ")+"\n  "+(s.groupKey==="smoke"?"@smoke\n  ":"")+s.gherkin.replaceAll("\n","\n  "))].join("\n")+"\n";
+  const feature=["# language: en","Feature: Exploration of "+host,...visible.map(s=>"\n  # "+line(s.group)+" · "+s.state+" · Evidence: "+s.ids.join(", ")+"\n  "+(s.groupKey==="smoke"?"@smoke\n  ":"")+s.gherkin.replaceAll("\n","\n  "))].join("\n")+"\n";
   if(visible.length) {
     const folder=join(store.root,"library"); mkdirSync(folder,{recursive:true,mode:0o700});
     const path=join(folder,run.id+".feature");

@@ -53,7 +53,7 @@ export class Accounts {
     if (!binary)
       return {
         ...account,
-        message: "CLI no instalada. Ejecuta npm install en este proyecto.",
+        message: "CLI unavailable. Run npm install in this project.",
       };
     try {
       const version = await execute(binary, ["--version"], { timeout: 10000 });
@@ -61,8 +61,8 @@ export class Accounts {
       if (id === "copilot") {
         account.connected = this.copilotConnected;
         account.message = this.copilotConnected
-          ? "Login completado. El acceso se comprueba de nuevo al ejecutar."
-          : "Conecta tu cuenta de GitHub para habilitar Copilot.";
+          ? "Sign-in complete. Access will be checked when the agent runs."
+          : "Connect your GitHub account to enable Copilot.";
       } else {
         const result = await execute(
           binary,
@@ -71,8 +71,8 @@ export class Accounts {
         );
         account.connected = result.code === 0;
         account.message = account.connected
-          ? "Sesión disponible en la CLI oficial."
-          : "Inicia sesión en el navegador.";
+          ? "Signed in through the official CLI."
+          : "Sign in through your browser.";
       }
     } catch (error) {
       account.message = (error as Error).message;
@@ -84,11 +84,11 @@ export class Accounts {
   }
   startLogin(id: Provider) {
     const binary = binaryFor(id);
-    if (!binary) throw new Error("CLI no instalada. Ejecuta npm install.");
+    if (!binary) throw new Error("CLI unavailable. Run npm install.");
     if (this.logins.get(id)?.status === "running") return;
     const login = {
       status: "running",
-      output: "Abriendo el login oficial en tu navegador…\n",
+      output: "Opening sign-in in your browser…\n",
       abort: new AbortController(),
     };
     this.logins.set(id, login);
@@ -113,7 +113,7 @@ export class Accounts {
           saveJSON(join(this.root, "accounts.json"), { copilot: true });
         }
         if (result.code !== 0)
-          login.output += `\nEl login terminó con código ${result.code}.`;
+          login.output += `\nSign-in exited with code ${result.code}.`;
       })
       .catch((error) => {
         login.status = "failed";

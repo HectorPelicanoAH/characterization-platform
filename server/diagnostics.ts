@@ -47,11 +47,11 @@ export function diagnostics(app: express.Express, store: Store, runs: Runs) {
   app.get("/api/runs/:id/diagnosis", (req, res) => {
     const run = runs.get(req.params.id);
     if (!run)
-      return res.status(404).json({ error: "Exploración no encontrada" });
+      return res.status(404).json({ error: "Exploration not found" });
     const scenarios = libraryEntry(store, run,true).scenarios;
     const failed = run.evidence.filter((e) => !e.ok);
     const issues = scenarios
-      .filter((s) => s.state === "Revisar evidencia")
+      .filter((s) => s.state === "Review evidence")
       .map((s) => ({
         title: s.title,
         ids: s.ids.filter(

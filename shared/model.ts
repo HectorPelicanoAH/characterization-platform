@@ -5,28 +5,28 @@ export type Provider = (typeof providers)[number];
 export const scopes = {
   smoke: {
     label: "Smoke",
-    description: "Acceso y flujos principales",
+    description: "Entry points and main flows",
     calls: 30,
     minutes: 8,
     flows: "3–5",
   },
   standard: {
-    label: "Funcional",
-    description: "Navegación y caminos habituales",
+    label: "Functional",
+    description: "Navigation and common journeys",
     calls: 80,
     minutes: 20,
     flows: "6–12",
   },
   deep: {
-    label: "En detalle",
-    description: "Variantes, estados y validaciones",
+    label: "Detailed",
+    description: "Variations, states and validation",
     calls: 160,
     minutes: 40,
     flows: "12–25",
   },
   exhaustive: {
-    label: "Exhaustiva",
-    description: "Límites y recorridos alternativos",
+    label: "Exhaustive",
+    description: "Edge cases and alternative paths",
     calls: 280,
     minutes: 60,
     flows: "25+",
@@ -47,7 +47,7 @@ export const runInputSchema = z.object({
       return (
         ["http:", "https:"].includes(u.protocol) && !u.username && !u.password
       );
-    }, "Usa una URL HTTP(S) sin credenciales."),
+    }, "Use an HTTP(S) URL without embedded credentials."),
   provider: z.enum(providers),
   model: z
     .string()

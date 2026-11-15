@@ -23,12 +23,12 @@ export async function collectContext(
   let visited = 0;
   for (const directory of directories) {
     if (!isAbsolute(directory))
-      throw new Error(`El directorio debe ser absoluto: ${directory}`);
+      throw new Error(`Use an absolute directory path: ${directory}`);
     const root = await realpath(directory).catch(() => {
-      throw new Error(`No se encuentra el directorio: ${directory}`);
+      throw new Error(`Directory not found: ${directory}`);
     });
     if (!(await lstat(root)).isDirectory())
-      throw new Error(`No es un directorio: ${directory}`);
+      throw new Error(`Not a directory: ${directory}`);
     async function walk(path: string, depth: number): Promise<void> {
       if (
         depth > 6 ||
@@ -36,7 +36,7 @@ export async function collectContext(
         snapshot.files.length >= 80 ||
         snapshot.characters >= 120000
       ) {
-        snapshot.warnings.push(`Límite de contexto alcanzado en ${path}.`);
+        snapshot.warnings.push(`Context limit reached at ${path}.`);
         return;
       }
       const entries = await readdir(path, { withFileTypes: true });
@@ -67,13 +67,13 @@ export async function collectContext(
         if (relative(root, canonical).startsWith(".." + sep)) continue;
         const stat = await lstat(file);
         if (stat.size > 24000) {
-          snapshot.warnings.push(`Omitido por tamaño (>24 KB): ${file}`);
+          snapshot.warnings.push(`Skipped due to size (>24 KB): ${file}`);
           continue;
         }
         const content = await readFile(file, "utf8");
         if (content.includes("\0")) continue;
         if (snapshot.characters + content.length > 120000) {
-          snapshot.warnings.push(`Sin espacio de contexto para ${file}`);
+          snapshot.warnings.push(`Context budget exhausted for ${file}`);
           continue;
         }
         snapshot.files.push({
@@ -93,7 +93,7 @@ export async function collectContext(
     snapshot.characters >= 120000
   )
     snapshot.warnings.push(
-      "Contexto limitado a 80 archivos, 120.000 caracteres y 3.000 entradas.",
+      "Context is limited to 80 files, 120,000 characters and 3,000 entries.",
     );
   return snapshot;
 }
