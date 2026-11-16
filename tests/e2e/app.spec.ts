@@ -45,6 +45,10 @@ test("setup, context persistence, coverage and provider requirements work on des
     .first()
     .click();
   await page.getByLabel("Starting URL").fill("https://example.com");
+  await expect(page.getByLabel("Generate service map")).not.toBeChecked();
+  await expect(page.getByLabel("Prioritize unexplored paths")).toBeChecked();
+  await page.getByLabel("Generate service map").check();
+  await expect(page.getByLabel("Generate service map")).toBeChecked();
   await page.getByRole("radio", { name: /Detailed/ }).check();
   await expect(page.getByRole("radio", { name: /Detailed/ })).toBeChecked();
   await expect(

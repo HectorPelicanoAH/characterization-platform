@@ -23,6 +23,7 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@playwright/mcp": "0.0.85",
     "@playwright/test": "1.65.1",
+    "@xyflow/react": "12.12.1",
     "express": "^5.1.0",
     "fflate": "^0.8.2",
     "lucide-react": "^0.468.0",

@@ -1,6 +1,6 @@
 # Characterize
 
-**Turn a browser journey into a regression test.** Give Characterize a starting URL and a flow to explore. An AI agent drives Chromium through Playwright MCP, records what happens, and writes tests for the behavior it observes.
+**Document application behavior from browser journeys.** Give Characterize a starting URL and a flow to explore. An AI agent drives Chromium through Playwright MCP, records business rules as it discovers them, and writes tests for the behavior it observes.
 
 [Quick start](#quick-start) · [First exploration](#your-first-exploration) · [Coverage](#coverage) · [Local data](#local-data)
 
@@ -25,6 +25,14 @@ Open [the local workspace](http://127.0.0.1:4320). Connect **one Codex, Claude o
 3. **Watch the journey.** Follow the actions as they arrive. The agent may follow redirects within the same registrable domain, including subdomains. When a flow leads to another domain, it records the destination and returns to the original site.
 4. **Review the evidence.** Open **Local library** for Gherkin scenarios grouped by site and screen. **Smoke** groups journeys spanning several screens. An interrupted exploration can still yield draft scenarios from recorded page observations. Open its diagnostics for failed actions and the local Playwright Trace Viewer when a trace is available.
 5. **Run the tests.** Download the suite ZIP from a completed exploration and review its TypeScript assertions. In the extracted directory, run `npm install`, `npx playwright install chromium` and `npm test` to verify the generated suite.
+
+Open **Application map** to explore a graph of screens, contained components, interactive elements, navigations and business rules. Repeated visible boundaries become shared entities connected to their screens. Double-click a screen to inspect its components and pending alternatives, then focus a component to see its elements. Select an entity for its evidence. Existing runs contribute their recorded snapshots and reports.
+
+Enable **Generate service map** before exploring to add browser destinations and their operations to the graph. Select an operation to inspect captured results, durations and available action evidence. Partial captures show their limits. Gateways appear as observed destinations, and unknown route segments are grouped for privacy.
+
+**Prioritize unexplored paths** uses documented scenarios, historical gaps and untried controls to guide the next exploration. The agent keeps decision points, backtracks to try sibling paths and saves each observed condition/action/outcome with `record_discovery`. Product, market, currency and other sample values belong to examples. Market-dependent rules retain their observed scope. Disable the option to recheck known flows.
+
+After three minutes without provider output, browser evidence or recorded discoveries, the worker stops and retains its recorded evidence and rules. Recorded rules remain available in the library and graph when the final report is incomplete. The library groups repeated scenarios with matching clauses and screens, and keeps their individual observations accessible.
 
 ## Coverage
 

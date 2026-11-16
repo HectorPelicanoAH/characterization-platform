@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { RecordedDiscovery } from "./discovery.ts";
 
 export const providers = ["codex", "claude", "copilot"] as const;
 export type Provider = (typeof providers)[number];
@@ -62,6 +63,8 @@ export const runInputSchema = z.object({
     .default("standard"),
   prompt: z.string().max(30000).default(""),
   headed: z.boolean().default(true),
+  serviceMapEnabled: z.boolean().default(false),
+  prioritizeNewPaths: z.boolean().default(true),
 });
 export type RunInput = z.infer<typeof runInputSchema>;
 export const reportSchema = z.object({
@@ -77,7 +80,7 @@ export const reportSchema = z.object({
         testCode: z.string().min(1).max(40000),
       }),
     )
-    .max(80),
+    .max(160),
   decisions: z.array(z.object({
     condition: z.string().min(1).max(240),
     action: z.string().min(1).max(240),
@@ -111,6 +114,8 @@ export type Evidence = {
   element?: string;
   externalUrl?: string;
   externalUrls?: string[];
+  startedAt?: string;
+  finishedAt?: string;
 };
 export type Run = RunInput & {
   id: string;
@@ -124,4 +129,36 @@ export type Run = RunInput & {
   warnings: string[];
   evidence: Evidence[];
   logs: string[];
+  serviceMapState?: ServiceMapState;
+  lastProviderActivityAt?: string;
+  discoveries?: RecordedDiscovery[];
+};
+
+export type ServiceMapState = "disabled" | "pending" | "ready" | "partial" | "unavailable";
+export type ServiceMap = {
+  schemaVersion: 1;
+  runId: string;
+  state: ServiceMapState;
+  coverage: {
+    reasons: string[];
+    examined: number;
+    included: number;
+    excludedType: number;
+    invalid: number;
+    bytesRead: number;
+  };
+  screens: { id: string; label: string; key: string; page: string }[];
+  services: { id: string; origin: string; external: boolean }[];
+  operations: { id: string; serviceId: string; method: string; path: string }[];
+  observations: {
+    id: string;
+    operationId: string;
+    screenId: string;
+    resourceType: "fetch" | "xhr" | "document";
+    startedMs: number;
+    status: number | null;
+    failed: boolean;
+    durationMs: number | null;
+    evidenceId?: number;
+  }[];
 };

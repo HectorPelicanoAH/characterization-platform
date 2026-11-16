@@ -19,6 +19,7 @@ import {
   Globe2,
   History,
   Layers3,
+  Network,
   LoaderCircle,
   Play,
   Plus,
@@ -40,6 +41,7 @@ import {
   type Settings,
 } from "../shared/model";
 import "./style.css";
+const ApplicationMap = React.lazy(() => import("./ApplicationMap").then(module => ({ default: module.ApplicationMap })));
 
 async function api<T>(
   path: string,
@@ -99,7 +101,9 @@ function readableDate(value: string) {
 }
 
 function App() {
-  const [page, setPage] = useState<"settings" | "explore" | "library" | "result">("settings");
+  const [page, setPage] = useState<"settings" | "explore" | "library" | "result" | "map">("settings");
+  const [mapSite, setMapSite] = useState<string>();
+  const [pendingEvidence, setPendingEvidence] = useState<number>();
   const [settings, setSettings] = useState<Settings>({
     context: "",
     directories: [],
@@ -128,9 +132,22 @@ function App() {
     scope: "standard",
     prompt: "",
     headed: true,
+    serviceMapEnabled: false,
+    prioritizeNewPaths: true,
   });
   const connected = accounts.filter((a) => a.connected);
   const working = run?.status === "running";
+  useEffect(() => {
+    if (page !== "result" || !pendingEvidence) return;
+    const event = document.getElementById("evidence-" + pendingEvidence) as HTMLDetailsElement | null;
+    if (!event) return;
+    const journey = event.closest(".evidence-list") as HTMLDetailsElement;
+    journey.open = true;
+    event.open = true;
+    event.scrollIntoView({ block: "center" });
+    event.querySelector("summary")?.focus();
+    setPendingEvidence(undefined);
+  }, [page, pendingEvidence, run?.id]);
 
   async function attempt(key: string, fn: () => Promise<void>) {
     setBusy(key);
@@ -270,6 +287,7 @@ function App() {
             <span className="step-count">02</span>
           </button>
           <button className={page==="library"?"nav-item selected":"nav-item"} onClick={()=>setPage("library")}><FolderOpen size={18}/> Local library</button>
+          <button className={page==="map"?"nav-item selected":"nav-item"} onClick={()=>{setMapSite(undefined);setPage("map");}}><Network size={18}/> Application map</button>
         </nav>
         <div className="sidebar-history">
           <div className="workspace-label">
@@ -296,7 +314,7 @@ function App() {
               <span className={"history-dot " + item.status} />
               <span>
                 <strong>{new URL(item.url).hostname}</strong>
-                <small>{readableDate(item.createdAt)}</small>
+                <small>{readableDate(item.createdAt)}{["ready", "partial"].includes(item.serviceMapState ?? "") && " · Service map"}</small>
               </span>
             </button>
             <button className="recent-remove" disabled={Boolean(busy)||item.status==="running"} aria-label={"Remove from recent explorations: "+new URL(item.url).hostname} title="Remove from recent explorations" onClick={()=>{
@@ -316,7 +334,7 @@ function App() {
           <span>
             Workspace <span className="breadcrumb">/</span>{" "}
             <strong>
-              {page === "settings" ? "Settings" : page==="library" ? "Local library" : "Characterization"}
+              {page === "settings" ? "Settings" : page==="library" ? "Local library" : page==="map" ? "Application map" : "Characterization"}
             </strong>
           </span>
           <ThemeToggle />
@@ -327,7 +345,7 @@ function App() {
               : "No account connected"}
           </span>
         </header>
-        <main>
+        <main className={page === "map" ? "map-main" : undefined}>
           {error && (
             <div role="alert" className="alert error">
               <span>{error}</span>
@@ -347,7 +365,15 @@ function App() {
               <LoaderCircle className="spin" />
               Loading your workspace…
             </div>
-          ) : page==="library" ? <Library onRun={id=>void attempt("history",async()=>{setRun(await api<Run>("/runs/"+id));setPage("result")})}/> : page === "settings" ? (
+          ) : page==="map" ? <React.Suspense fallback={<p role="status">Loading application map…</p>}><ApplicationMap key={mapSite ?? "all"} initialSite={mapSite}
+            onEvidence={(id,evidenceId)=>void attempt("history",async()=>{
+              setRun(await api<Run>("/runs/"+id));setPendingEvidence(evidenceId);setPage("result");
+            })}
+            onExplore={(site,screen)=>{
+              setInput(old=>({...old,url:site,prioritizeNewPaths:true,prompt:old.prompt+"\nDocument the pending behavior of "+screen+". Backtrack through its alternatives and record each business rule."}));
+              setPage("explore");
+            }}
+          /></React.Suspense> : page==="library" ? <Library onRun={id=>void attempt("history",async()=>{setRun(await api<Run>("/runs/"+id));setPage("result")})}/> : page === "settings" ? (
             <>
               <div className="page-heading">
                 <div className="eyebrow">WORKSPACE SETUP</div>
@@ -656,9 +682,9 @@ function App() {
                   <small>Recorded by Playwright</small>
                 </div>
                 <div>
-                  <span>GENERATED FLOWS</span>
-                  <strong>{run.report?.flows.length ?? "—"}</strong>
-                  <small>Awaiting execution</small>
+                  <span>BEHAVIOR RULES</span>
+                  <strong>{Math.max(run.discoveries?.length ?? 0, run.report?.flows.length ?? 0) || "—"}</strong>
+                  <small>{run.discoveries?.length ? "Recorded during exploration" : "Awaiting discovery"}</small>
                 </div>
                 <div>
                   <span>APPLIED CONTEXT</span>
@@ -681,6 +707,11 @@ function App() {
                         : run.report?.summary ||
                           "Review the evidence and diagnostics for this exploration."}
                     </p>
+                    {working && <p className="small muted" role="status">
+                      Last browser action {run.evidence.length ? readableDate(run.evidence[run.evidence.length - 1].at) : "pending"}.
+                      {" "}Last provider activity {readableDate(run.lastProviderActivityAt ?? run.createdAt)}.
+                      {" "}The exploration stops after 3 minutes without provider or browser activity.
+                    </p>}
                   </div>
                   {working ? (
                     <button
@@ -706,6 +737,9 @@ function App() {
                 </div>
                 {run.error && <div className="alert error">{run.error}</div>}
                 <a className="button secondary diagnosis-link" href={"/diagnostico/"+run.id}>View diagnostics and trace</a>
+                <button type="button" className="button secondary diagnosis-link" onClick={()=>{
+                  setMapSite(new URL(run.url).origin);setPage("map");
+                }}><Network size={16}/>View application map</button>
                 {working && (
                   <div className="progress-track">
                     <span />
@@ -725,7 +759,7 @@ function App() {
                     </p>
                   )}
                   {run.evidence.map((event) => (
-                    <details key={event.id} className="evidence-event">
+                    <details key={event.id} id={"evidence-" + event.id} className="evidence-event">
                       <summary>
                         <span
                           className={"evidence-dot " + (event.ok ? "ok" : "")}
@@ -745,7 +779,7 @@ function App() {
                   ))}
                 </details>
               </section>
-              <Library runId={run.id} revision={run.status+run.evidence.length}/>
+              <Library runId={run.id} revision={run.status+run.evidence.length+(run.discoveries?.length ?? 0)}/>
               {run.report && (
                 <section className="flows-section">
                   <div className="section-heading">
@@ -1016,6 +1050,18 @@ function App() {
                       />
                       <span>Show the browser during exploration</span>
                     </label>
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={input.prioritizeNewPaths !== false}
+                        onChange={e => setInput({ ...input, prioritizeNewPaths: e.target.checked })} />
+                      <span>Prioritize unexplored paths</span>
+                    </label>
+                    <p className="small muted">Use documented scenarios as context and focus on pending controls, conditions and outcomes.</p>
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={input.serviceMapEnabled}
+                        onChange={e => setInput({ ...input, serviceMapEnabled: e.target.checked })} />
+                      <span>Generate service map</span>
+                    </label>
+                    <p className="small muted">Add observed browser requests and services to the Application map.</p>
                   </section>
                   {!connected.length && (
                     <div className="alert">

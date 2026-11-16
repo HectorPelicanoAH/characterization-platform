@@ -1,4 +1,4 @@
-import { libraryEntry } from "./library.ts";
+import { libraryEntry, consolidatedLibrary } from "./library.ts";
 import {diagnostics} from "./diagnostics.ts";
 import express from "express";
 import { resolve, join } from "node:path";
@@ -99,7 +99,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   });
   diagnostics(app,store,runs);
   function library() {
-    return store.runs().map(run => libraryEntry(store, runs.get(run.id) ?? run)).filter(entry => entry.scenarios.length);
+    return consolidatedLibrary(store.runs().map(run => libraryEntry(store, runs.get(run.id) ?? run)).filter(entry => entry.scenarios.length));
   }
   library(); // Recover earlier runs on startup without inference.
   app.delete("/api/recent/:id",(req,res)=>{
@@ -113,11 +113,24 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     const run=runs.get(req.params.id);
     if(!run)return res.status(404).json({error:"Exploration not found"});
     if(run.status==="running")return res.status(409).json({error:"Wait for the exploration to finish."});
-    if(!libraryEntry(store,run).scenarios.some(s=>s.id===req.params.scenario))return res.status(404).json({error:"Scenario not found"});
-    store.exclude(run.id,req.params.scenario);
-    res.json(libraryEntry(store,run));
+    const scenario = libraryEntry(store,run).scenarios.find(s=>s.id===req.params.scenario);
+    if(!scenario)return res.status(404).json({error:"Scenario not found"});
+    const entries = req.query.allObservations === "1" ? store.runs().filter(item=>item.status!=="running") : [run];
+    for (const item of entries) {
+      for (const candidate of libraryEntry(store,runs.get(item.id) ?? item).scenarios.filter(s=>s.fingerprint===scenario.fingerprint)) {
+        for (const occurrence of candidate.occurrences) store.exclude(occurrence.runId,occurrence.scenarioId);
+      }
+      libraryEntry(store,runs.get(item.id) ?? item);
+    }
+    res.json(req.query.allObservations === "1" ? library() : libraryEntry(store,run));
   });
   app.get("/api/decision-maps", (_req,res)=>res.json(runs.maps()));
+  app.get("/api/application-map/sites", (_req,res)=>res.json(runs.applicationSites()));
+  app.get("/api/application-map", (req,res)=>{
+    const site = z.string().url().max(2048).parse(req.query.site);
+    if (!runs.applicationSites().includes(site)) return res.status(404).json({error:"Site not found."});
+    res.json(runs.applicationMap(site));
+  });
   app.get("/api/library", (_req,res)=>res.json(library()));
   app.get("/api/runs/:id/scenarios", (req,res)=>{
     const run=runs.get(req.params.id);
@@ -128,7 +141,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     res.json(
       store
         .runs()
-        .map(({ logs, evidence, report, ...run }) => ({
+        .map(({ logs, evidence, report, discoveries, ...run }) => ({
           ...run,
           flowCount: report?.flows.length ?? 0,
           removedFromRecent:store.exclusions(run.id).recent,
@@ -148,6 +161,11 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     if (!run)
       return res.status(404).json({ error: "Exploration not found." });
     res.json(run);
+  });
+  app.get("/api/runs/:id/service-map", (req, res) => {
+    const map = runs.serviceMap(req.params.id);
+    if (!map) return res.status(404).json({ error: "Exploration not found." });
+    res.json(map);
   });
   app.post("/api/runs/:id/cancel", (req, res) => {
     runs.cancel(req.params.id);

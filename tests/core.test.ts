@@ -210,6 +210,68 @@ test("worker cancellation and timeout terminate actual child processes", async (
   );
 });
 
+test("inactivity timeout terminates stalled workers and accepts browser and provider activity", async () => {
+  await assert.rejects(execute(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+    timeout: 2000, idleTimeout: 120,
+  }), /without provider or browser activity/);
+  let activity = Date.now();
+  const heartbeat = setInterval(() => { activity = Date.now(); }, 30);
+  try {
+    const result = await execute(process.execPath, ["-e", "setTimeout(()=>process.exit(0),350)"], {
+      timeout: 2000, idleTimeout: 150, activityAt: () => activity,
+    });
+    assert.equal(result.code, 0);
+  } finally { clearInterval(heartbeat); }
+  const result = await execute(process.execPath, ["-e",
+    "const tick=setInterval(()=>console.log('progress'),40);setTimeout(()=>{clearInterval(tick);},2500)"], {
+    timeout: 10000, idleTimeout: 2000,
+  });
+  assert.equal(result.code, 0);
+});
+
+test("exploration prompt prioritizes new paths and keeps rechecking as an explicit choice", async () => {
+  const { agentPrompt } = await import("../server/agent.ts");
+  const context = { files: [], warnings: [], characters: 0 };
+  const settings = { context: "", directories: [] };
+  assert.match(agentPrompt(input, settings, context), /Prioriza caminos nuevos/);
+  assert.match(agentPrompt({ ...input, prioritizeNewPaths: false }, settings, context), /Vuelve a comprobar/);
+});
+
+test("library groups repeated observations while preserving different outcomes and sites", async () => {
+  const { libraryEntry, consolidatedLibrary } = await import("../server/library.ts");
+  const dir = await mkdtemp(join(tmpdir(), "characterize-dedup-"));
+  try {
+    const store = new Store(dir);
+    const event = (id: number) => ({ id, tool: "browser_snapshot", ok: true, at: "", detail: "- Page URL: https://example.test/catalog\n- Page Title: Catalog" });
+    const previous = { ...input, id: randomUUID(), createdAt: "2026-11-14", status: "completed", evidence: [event(1),event(2)],
+      report: { ...structuredClone(report), flows: [structuredClone(report.flows[0]), { ...structuredClone(report.flows[0]), evidenceIds: [2] }] },
+    } as Run;
+    store.saveRun(previous);
+    const first = libraryEntry(store,previous);
+    assert.equal(first.scenarios.length,1);
+    assert.equal(first.scenarios[0].occurrences.length,2);
+    assert.deepEqual(first.scenarios[0].ids,[1,2]);
+    const recent = { ...previous, id: randomUUID(), createdAt: "2026-11-15", report: {
+      ...structuredClone(report), flows: [
+        { ...structuredClone(report.flows[0]), title: "Same behavior renamed", evidenceIds: [2] },
+        { ...structuredClone(report.flows[0]), observed: "The collection is empty" },
+      ],
+    } };
+    store.saveRun(recent);
+    const second = libraryEntry(store,recent);
+    const grouped = consolidatedLibrary([first,second]);
+    assert.equal(grouped.flatMap(entry=>entry.scenarios).length,2);
+    assert.equal(grouped.flatMap(e=>e.scenarios).find(s=>s.fingerprint===first.scenarios[0].fingerprint)?.occurrences.length,3);
+    assert.deepEqual(first.scenarios[0].ids,[1,2]);
+    const third = { ...previous,id:randomUUID(),url:"https://other.test" };
+    store.saveRun(third);
+    assert.equal(consolidatedLibrary([first,second,libraryEntry(store,third)]).flatMap(e=>e.scenarios).length,3);
+    const draft = { ...previous,id:randomUUID(),report:undefined,evidence:[event(1),event(2),{...event(3),detail:"- Page URL: https://example.test/cart\n- Page Title: Cart"},event(4)] };
+    store.saveRun(draft);
+    assert.equal(libraryEntry(store,draft).scenarios.length,2);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+
 test("maps preserve alternative outcomes and ignore failed or missing evidence", async () => {
   const { decisionMaps } = await import("../server/decision-map.ts");
   const event = (id:number, path:string, ok=true) => ({

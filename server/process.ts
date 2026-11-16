@@ -32,6 +32,8 @@ export function execute(
     cwd?: string;
     input?: string;
     timeout?: number;
+    idleTimeout?: number;
+    activityAt?: () => number;
     signal?: AbortSignal;
     onOutput?: (text: string) => void;
     env?: NodeJS.ProcessEnv;
@@ -52,14 +54,24 @@ export function execute(
         stderr = "",
         timedOut = false,
         overflow = false;
+      let lastActivity = Date.now();
+      let idleTimedOut = false;
       const abort = () => terminate(child);
       options.signal?.addEventListener("abort", abort, { once: true });
       const timer = setTimeout(() => {
         timedOut = true;
         terminate(child);
       }, options.timeout ?? 15000);
+      const idleTimer = options.idleTimeout ? setInterval(() => {
+        lastActivity = Math.max(lastActivity, options.activityAt?.() ?? 0);
+        if (Date.now() - lastActivity < options.idleTimeout!) return;
+        idleTimedOut = true;
+        clearInterval(idleTimer);
+        terminate(child);
+      }, Math.min(1000, options.idleTimeout)) : undefined;
       const output = (kind: "out" | "err", data: Buffer) => {
         const value = data.toString();
+        lastActivity = Date.now();
         if (stdout.length + stderr.length + value.length > 8_000_000) {
           overflow = true;
           terminate(child);
@@ -75,6 +87,7 @@ export function execute(
       child.stdin.end(options.input ?? "");
       const cleanup = () => {
         clearTimeout(timer);
+        clearInterval(idleTimer);
         options.signal?.removeEventListener("abort", abort);
       };
       child.on("error", (error) => {
@@ -84,6 +97,7 @@ export function execute(
       child.on("close", (code) => {
         cleanup();
         if (options.signal?.aborted) reject(new Error("Cancelled"));
+        else if (idleTimedOut) reject(new Error("Exploration stopped after " + Math.ceil(options.idleTimeout! / 1000) + " seconds without provider or browser activity. Recorded evidence has been preserved."));
         else if (timedOut)
           reject(new Error("Execution timed out."));
         else if (overflow)

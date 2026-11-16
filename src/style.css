@@ -1356,7 +1356,8 @@ summary {
     display: none;
   }
   .sidebar nav {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     margin-top: 18px;
     gap: 10px;
   }
@@ -1665,14 +1666,80 @@ summary {
   background: #293b2d;
   border-color: #86ae8d;
 }
-.decision-map { margin: 20px 0 28px; padding: 18px; border: 1px solid var(--border); border-radius: 10px; }
-.map-select { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 15px; }
-.map-select label { display: grid; gap: 5px; flex: 1 1 200px; min-width: 0; }
-.map-select select,.map-edge button { color: inherit; background: var(--cream); border: 1px solid var(--border); border-radius: 6px; padding: 7px; max-width: 100%; }
-.map-edges { display: grid; gap: 6px; }
-.map-edge { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; overflow-wrap: anywhere; }
-.map-edge span { color: var(--green); }
-.map-edge button:disabled { opacity: 1; font-weight: 700; }
-.map-condition summary { cursor: pointer; font-weight: 600; }
-.map-condition ul { border-left: 2px solid var(--border); padding-left: 22px; margin: 10px 0 18px 5px; }
-.map-condition li { padding: 3px 0 8px; overflow-wrap: anywhere; }
+.map-main { max-width: none; padding: 30px 32px; }
+.application-map-page { min-width: 0; }
+.application-map-page .page-heading { margin-bottom: 22px; }
+.application-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin-bottom: 18px; }
+.application-toolbar label:not(.checkbox-row) { display: grid; gap: 7px; font-size: 12px; color: var(--muted); }
+.application-toolbar select { border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; color: inherit; background: var(--cream); max-width: 100%; }
+.application-toolbar .checkbox-row { margin: 0; padding: 9px 0; }
+.application-toolbar .button { margin-left: auto; }
+.application-map-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+.map-help { margin-left: auto; }
+.application-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 310px; min-height: 680px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: #fff; }
+.application-canvas { height: max(680px, calc(100vh - 290px)); min-width: 0; position: relative; background: #f6f8f6; }
+.application-canvas .react-flow { --xy-background-color: #f6f8f6; --xy-edge-label-background-color: #f6f8f6; --xy-edge-label-color: #65746e; --xy-controls-button-background-color: #fff; --xy-controls-button-color: #344e42; }
+.application-canvas .react-flow__node { border-radius: 10px; }
+.application-canvas .react-flow__edge-text { font-size: 10px; }
+.application-canvas .react-flow__controls button { padding: 4px; }
+.application-canvas .react-flow__minimap { width: 130px; height: 90px; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.application-canvas .react-flow__handle { width: 7px; height: 7px; border: 1px solid #fff; background: #82958b; }
+.application-entity { width: 100%; height: 100%; border: 1px solid #d5dfd9; border-radius: 10px; background: #fff; color: #32443a; box-shadow: 0 3px 10px #233c2c06; overflow: hidden; }
+.application-entity header { height: 68px; display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #dce5df80; }
+.application-entity header > div { min-width: 0; }
+.application-entity small { display: block; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: #77867d; margin-bottom: 4px; }
+.application-entity strong { display: block; font-size: 13px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.application-entity.screen { border-color: #90b1a0; background: #edf4ef; }
+.application-entity.screen header > svg { color: #44775c; }
+.application-entity.component { border-color: #c5b5d7; background: #f4f0f8; }
+.application-entity.component header > svg { color: #8865aa; }
+.application-entity.service { border-color: #d9bc94; background: #faf4e9; }
+.application-entity.service header > svg { color: #af7b38; }
+.application-entity.rule { border-color: #9fb9d3; background: #eff5fb; }
+.application-entity.element small, .application-entity.operation small, .application-entity.rule small { font-size: 9px; }
+.application-entity p { font-size: 12px; margin: 8px 16px; color: #77867d; }
+.application-entity.selected { outline: 2px solid #628f79; outline-offset: 3px; }
+.entity-state { display: inline-block; flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: #abb6af; }
+.entity-state.exercised { background: #4f9a6c; }
+.entity-state.blocked { background: #c48c4c; }
+.application-inspector { padding: 22px 18px; border-left: 1px solid var(--border); overflow-y: auto; max-height: max(680px, calc(100vh - 290px)); min-width: 0; }
+.application-inspector h2 { font-size: 19px; line-height: 1.3; margin: 5px 0 12px; overflow-wrap: anywhere; }
+.application-inspector h3 { font-size: 12px; margin-top: 24px; color: var(--muted); font-weight: 500; }
+.application-inspector .mono { overflow-wrap: anywhere; }
+.entity-kind { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.entity-description { white-space: pre-line; font-size: 13px; line-height: 1.8; }
+.entity-search { display: flex; gap: 8px; align-items: center; border: 1px solid var(--border); padding: 8px; border-radius: 6px; margin-top: 20px; }
+.entity-search input { min-width: 0; width: 100%; border: 0; background: transparent; color: inherit; font-size: 12px; padding: 0; }
+.entity-browser { max-height: 300px; overflow-y: auto; margin-top: 12px; }
+.inspector-row { display: flex; width: 100%; text-align: left; justify-content: start; padding: 9px 0; gap: 8px; background: transparent; color: inherit; border: 0; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.5; }
+.inspector-row svg { flex-shrink: 0; color: var(--muted); }
+.inspector-row small { margin-left: auto; color: var(--muted); font-size: 10px; }
+.inspector-actions { display: grid; justify-items: start; gap: 10px; margin: 18px 0; }
+.graph-evidence { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.graph-evidence button { font-size: 11px; }
+.graph-empty { position: absolute; top: 40%; width: 100%; text-align: center; color: var(--muted); }
+.map-gaps { margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 1.8; }
+:root[data-theme="dark"] .application-workspace { background: #202b25; }
+:root[data-theme="dark"] .application-canvas .react-flow { --xy-background-color: #19231e; --xy-edge-label-background-color: #19231e; --xy-edge-label-color: #a4b6aa; --xy-controls-button-background-color: #29392f; --xy-controls-button-color: #c2d5c7; }
+:root[data-theme="dark"] .application-entity { color: #dfebe2; background: #26372d; border-color: #526b5a; }
+:root[data-theme="dark"] .application-entity.screen { background: #253d30; border-color: #628a73; }
+:root[data-theme="dark"] .application-entity.component { background: #332e40; border-color: #78648e; }
+:root[data-theme="dark"] .application-entity.service { background: #3d3526; border-color: #978056; }
+:root[data-theme="dark"] .application-entity.rule { background: #293a4c; border-color: #6185a9; }
+:root[data-theme="dark"] .application-entity small { color: #aebfb2; }
+:root[data-theme="dark"] .application-entity header { border-color: #778a7d33; }
+:root[data-theme="dark"] .application-entity header > svg { color: #adc7b8; }
+@media (max-width: 1100px) {
+  .application-workspace { grid-template-columns: minmax(0, 1fr) 260px; }
+  .map-main { padding: 24px 20px; }
+}
+@media (max-width: 760px) {
+  .application-workspace { grid-template-columns: minmax(0, 1fr); }
+  .application-canvas { height: 62vh; min-height: 450px; }
+  .application-inspector { border-left: 0; border-top: 1px solid var(--border); max-height: 480px; }
+  .application-toolbar .button { margin-left: 0; }
+  .application-toolbar label:first-child { width: 100%; }
+  .application-toolbar select { width: 100%; }
+  .map-help { margin-left: 0; }
+  .application-canvas .react-flow__minimap { display: none; }
+}

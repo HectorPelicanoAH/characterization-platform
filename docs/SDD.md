@@ -14,6 +14,9 @@ Se toma Automation-platform como referencia de una herramienta local con proveed
 - Caracterización: URL, prompt, cobertura, proveedor, modelo y esfuerzo, navegador visible opcional.
 - Resultado dentro de la segunda pantalla: progreso por acciones MCP, cancelación, flujos, pasos, resultados, evidencia, código, límites y descarga ZIP.
 - Historial persistente con estados `running`, `completed`, `failed`, `cancelled`, `interrupted`.
+- Pestaña Application map con grafo de pantallas y componentes anidados, entidades compartidas, controles, navegaciones, reglas y servicios observados. La biblioteca presenta escenarios y referencias de evidencia.
+- Descubrimiento incremental con `record_discovery` y plan de alternativas mediante `get_discovery_plan`. Los hallazgos persisten antes de generar el informe final. El plan conserva los controles pendientes al volver a una pantalla y actualiza sus referencias.
+- La exploración documenta capacidades y reglas observables. Los valores de producto y mercado se guardan como ejemplos y las reglas dependientes del mercado conservan ese alcance. El presupuesto acota la exploración y cada estado o resultado distinto puede producir un escenario.
 
 `completed` significa informe y tests generados con referencias válidas a acciones observadas. No significa que los tests hayan pasado.
 

@@ -5,13 +5,16 @@ export function identify(raw: string, title?: string): Screen | undefined {
   try {
     const u = new URL(raw);
     if (!["http:", "https:"].includes(u.protocol)) return;
-    const path = (u.hash.match(/^#!?(\/[^?]*)/)?.[1] ?? u.pathname).replace(/\/+$/, "") || "/";
-    const catalogRoute = path.match(/^\/[a-z]{2}\/[a-z]{2}\/(c|p|search)(?:\/|$)/);
+    const rawPath = (u.hash.match(/^#!?(\/[^?]*)/)?.[1] ?? u.pathname).replace(/\/+$/, "") || "/";
+    const path = rawPath.replace(/^\/(?:en|es|ca|fr|de|it|pt|nl|pl|sv|da|fi|no|el|cs|ro|hu|tr|ja|ko|zh)(?:[-_][a-z]{2})?(?:\/[a-z]{2})?(?=\/|$)/i, "") || "/";
+    const catalogRoute = path.match(/^\/(c|p|search)(?:\/|$)/);
     if (catalogRoute) {
       const labels: Record<string,string> = { c:"Product listing", p:"Product details", search:"Search" };
       return {key:u.origin+"/:"+catalogRoute[1], label:labels[catalogRoute[1]]};
     }
-    return {key:u.origin+path, label:title?.trim() || (path === "/" ? "Home" : path)};
+    const canonical = path.replace(/\/(?:\d+|[a-f\d]{8}-[a-f\d-]{27,})(?=\/|$)/gi, "/{id}");
+    const labels: Record<string,string> = { "/":"Home", "/cart":"Cart", "/checkout":"Checkout", "/login":"Sign in", "/search":"Search" };
+    return {key:u.origin+canonical, label:labels[canonical] || title?.trim() || canonical};
   } catch { return; }
 }
 

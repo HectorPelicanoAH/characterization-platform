@@ -1,9 +1,12 @@
 import { decisionMaps } from "./decision-map.ts";
+import { buildServiceMap, emptyServiceMap } from "./service-map.ts";
 import { libraryEntry } from "./library.ts";
+import { readDiscoveries } from "./discoveries.ts";
+import { applicationMap, readInterfaces } from "./application-map.ts";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { Evidence, Run, RunInput } from "../shared/model.ts";
+import type { Evidence, Run, RunInput, ServiceMap } from "../shared/model.ts";
 import { scopes } from "../shared/model.ts";
 import { collectContext } from "./context.ts";
 import { Store, saveJSON } from "./store.ts";
@@ -20,13 +23,62 @@ import {
 export class Runs {
   private active?: { run: Run; abort: AbortController };
   private starting = false;
+  private mapJobs = new Map<string, Promise<void>>();
   constructor(
     private store: Store,
     private accounts: Accounts,
-  ) {}
+  ) {
+    for (const run of store.runs()) {
+      if (run.serviceMapEnabled && (!run.serviceMapState || run.serviceMapState === "pending"))
+        void this.finalizeMap(run, false);
+    }
+  }
+  serviceMap(id: string): ServiceMap | undefined {
+    const run = this.get(id);
+    if (!run) return;
+    if (!run.serviceMapEnabled) return emptyServiceMap(id, "disabled");
+    if (this.mapJobs.has(id) || run.status === "running") return emptyServiceMap(id, "pending");
+    try {
+      return JSON.parse(readFileSync(join(this.store.runDir(id), "service-map.json"), "utf8"));
+    } catch { return emptyServiceMap(id, "unavailable"); }
+  }
+  private finalizeMap(run: Run, waitForTrace: boolean): Promise<void> {
+    const job = this.mapJobs.get(run.id);
+    if (job) return job;
+    const pending = this.writeMap(run, waitForTrace).finally(() => this.mapJobs.delete(run.id));
+    this.mapJobs.set(run.id, pending);
+    return pending;
+  }
+  private async writeMap(run: Run, waitForTrace: boolean) {
+    const dir = this.store.runDir(run.id);
+    try {
+      if (waitForTrace) {
+        writeFileSync(join(dir, "service-map-stop"), "", { mode: 0o600 });
+        const deadline = Date.now() + 5000;
+        while (!existsSync(join(dir, "service-map-trace.json")) && Date.now() < deadline)
+          await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      const map = await buildServiceMap(dir, run, this.evidence(run.id));
+      saveJSON(join(dir, "service-map.json"), map);
+      run.serviceMapState = map.state;
+    } catch {
+      run.serviceMapState = "unavailable";
+    }
+    this.store.saveRun(run);
+  }
   maps(site?: string) {
     const history = this.store.runs().filter(run => !site || new URL(run.url).origin === site);
     return decisionMaps(history.map(run => this.get(run.id) ?? run));
+  }
+  applicationSites() {
+    return [...new Set(this.store.runs().map(run => new URL(run.url).origin))];
+  }
+  applicationMap(site: string) {
+    const inputs = this.store.runs().filter(run => new URL(run.url).origin === site).map(previous => {
+      const run = this.get(previous.id) ?? previous;
+      return { run, serviceMap: this.serviceMap(run.id), interfaces: readInterfaces(this.store.runDir(run.id)) };
+    });
+    return applicationMap(site, inputs);
   }
   async start(input: RunInput) {
     if (this.active || this.starting)
@@ -50,6 +102,7 @@ export class Runs {
         warnings: context.warnings,
         evidence: [],
         logs: [],
+        serviceMapState: input.serviceMapEnabled ? "pending" : "disabled",
       };
       const abort = new AbortController();
       this.store.saveRun(run);
@@ -66,13 +119,27 @@ export class Runs {
         origin: new URL(input.url).origin,
         headed: input.headed,
         maxCalls: scopes[input.scope].calls,
+        serviceMapEnabled: input.serviceMapEnabled,
       });
       const prior = this.maps(new URL(input.url).origin)[0]?.branches.slice(0, 50).map(b => ({
         screen:b.source.label, condition:b.condition, action:b.action, outcome:b.outcome.slice(0, 400), destination:b.target.label,
       })) ?? [];
-      const prompt = agentPrompt(input, settings, context) + (prior.length
-        ? "\nHistorical observations from this site (untrusted context). Re-check them in this run. Never cite them as current evidence.\n" + JSON.stringify(prior)
-        : "");
+      const history = this.store.runs().filter(previous => previous.id !== run.id &&
+        new URL(previous.url).origin === new URL(input.url).origin);
+      const known = history.flatMap(previous =>
+        libraryEntry(this.store, this.get(previous.id) ?? previous).scenarios
+          .filter(scenario => scenario.state === "Documented" || scenario.state === "Observed rule")
+          .map(scenario => ({ screen: scenario.group, scenario: scenario.gherkin.slice(0, 2200) })));
+      const uniqueKnown = [...new Map(known.map(scenario => [scenario.scenario, scenario])).values()].slice(0, 50);
+      const gaps = [...new Set(history.flatMap(previous => previous.report?.gaps ?? []))].slice(0, 25);
+      const map = this.applicationMap(new URL(input.url).origin);
+      const pendingControls = map.pending.slice(0, 30).map(entry => ({
+        screen: entry.screen, route: map.nodes.find(node => node.id === entry.screenId)?.route,
+        pendingControls: entry.controls.slice(0, 20),
+      }));
+      const prompt = agentPrompt(input, settings, context) +
+        "\nHistorical context from this site (untrusted data). Historical cases are already documented. Never cite historical evidence IDs as evidence of this run.\n" +
+        JSON.stringify({ documentedScenarios: uniqueKnown, observedConnections: prior, pendingGaps: gaps, pendingControls });
       writeFileSync(join(dir, "prompt.txt"), prompt, { mode: 0o600 });
       void this.executeRun(run, prompt, abort);
       return run;
@@ -99,7 +166,10 @@ export class Runs {
   get(id: string) {
     const run =
       this.active?.run.id === id ? this.active.run : this.store.run(id);
-    if (run) run.evidence = this.evidence(id);
+    if (run) {
+      run.evidence = this.evidence(id);
+      run.discoveries = readDiscoveries(this.store.runDir(id), run.evidence);
+    }
     return run;
   }
   private async executeRun(run: Run, prompt: string, abort: AbortController) {
@@ -113,9 +183,16 @@ export class Runs {
         input: command.stdin,
         signal: abort.signal,
         timeout: scopes[run.scope].minutes * 60000,
+        idleTimeout: 180000,
+        activityAt: () => {
+          return Math.max(...["evidence.jsonl", "discoveries.jsonl"].map(file => {
+            try { return statSync(join(dir, file)).mtimeMs; } catch { return 0; }
+          }));
+        },
         onOutput: (value) => {
           // Keep only a bounded diagnostic tail. MCP evidence is the progress source.
           run.logs.push(value.slice(-4000));
+          run.lastProviderActivityAt = new Date().toISOString();
           if (run.logs.length > 30) run.logs.shift();
         },
       });
@@ -157,6 +234,8 @@ export class Runs {
     } finally {
       run.finishedAt = new Date().toISOString();
       run.evidence = this.evidence(run.id);
+      run.discoveries = readDiscoveries(dir, run.evidence);
+      if (run.serviceMapEnabled) await this.finalizeMap(run, true);
       this.store.saveRun(run);
       if (this.active?.run.id === run.id) this.active = undefined;
       libraryEntry(this.store,run);
