@@ -42,7 +42,7 @@ export function execute(
   return new Promise<{ code: number; stdout: string; stderr: string }>(
     (resolve, reject) => {
       if (options.signal?.aborted) return reject(new Error("Cancelled"));
-      const env = { ...process.env, ...options.env };
+      const env = { ...(options.env ?? process.env) };
       delete env.CLAUDECODE;
       const child = spawn(binary, args, {
         cwd: options.cwd,

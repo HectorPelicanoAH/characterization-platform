@@ -97,7 +97,7 @@ export type Account = {
   connected: boolean;
   version?: string;
   message?: string;
-  login?: { status: string; output: string };
+  login?: { status: string; output: string; url?: string; prompt?: { message: string; choices: { value: string; label: string }[] } };
 };
 export type ContextFile = { path: string; content: string; hash: string };
 export type ContextSnapshot = {

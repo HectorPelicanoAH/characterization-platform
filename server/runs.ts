@@ -180,6 +180,7 @@ export class Runs {
       this.store.saveRun(run);
       const result = await execute(binaryFor(run.provider)!, command.args, {
         cwd: dir,
+        env: this.accounts.environment(run.provider),
         input: command.stdin,
         signal: abort.signal,
         timeout: scopes[run.scope].minutes * 60000,

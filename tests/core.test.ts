@@ -14,6 +14,37 @@ import {
   externalUrlsFromResult,
 } from "../server/domain.mjs";
 import { execute } from "../server/process.ts";
+import { Accounts, copilotSignInUrl } from "../server/providers.ts";
+
+test("Copilot authorization requests account selection and preserves OAuth parameters", () => {
+  const url = new URL(copilotSignInUrl("https://github.com/login/oauth/authorize?client_id=fixture&state=opaque-state&redirect_uri=http%3A%2F%2F127.0.0.1%3A1234%2Fcallback"));
+  assert.equal(url.searchParams.get("prompt"), "select_account");
+  assert.equal(url.searchParams.get("state"), "opaque-state");
+  assert.equal(url.searchParams.get("client_id"), "fixture");
+  assert.equal(url.searchParams.get("redirect_uri"), "http://127.0.0.1:1234/callback");
+  assert.throws(() => copilotSignInUrl("https://example.com/login/oauth/authorize"));
+  assert.throws(() => copilotSignInUrl("https://github.com/login"));
+});
+
+test("private account environments do not inherit global tokens in child processes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "characterize-accounts-"));
+  const previous = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "fixture-global-token";
+  try {
+    const accounts = new Accounts(root);
+    const env = accounts.environment("copilot");
+    assert.equal(env.GITHUB_TOKEN, undefined);
+    assert.equal(env.COPILOT_HOME, join(root, "accounts", "copilot"));
+    assert.equal(env.COPILOT_DISABLE_KEYTAR, "1");
+    const result = await execute(process.execPath, ["-e", "process.stdout.write(String(process.env.GITHUB_TOKEN === undefined))"], { env });
+    assert.equal(result.stdout.trim(), "true");
+    assert.throws(() => accounts.answerLogin("copilot", "unrequested-choice"));
+  } finally {
+    if (previous === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 const input = runInputSchema.parse({
   url: "https://shop.example.co.uk",

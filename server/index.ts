@@ -71,6 +71,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   app.get("/api/accounts", async (_req, res) => res.json(await accounts.all()));
   app.get("/api/models/:provider", async (req, res) => {
     const provider = z.enum(providers).parse(req.params.provider);
+    if (provider === "copilot") return res.json(await accounts.models());
     if (provider === "codex") {
       if (!catalogCache || Date.now() - catalogCache.at > 300000)
         catalogCache = {
@@ -96,6 +97,14 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   app.post("/api/accounts/:id/cancel", (req, res) => {
     accounts.cancelLogin(z.enum(providers).parse(req.params.id));
     res.json({ cancelled: true });
+  });
+  app.post("/api/accounts/:id/answer", (req, res) => {
+    accounts.answerLogin(z.enum(providers).parse(req.params.id), z.string().max(1000).parse(req.body.value));
+    res.json({ accepted: true });
+  });
+  app.post("/api/accounts/:id/disconnect", async (req, res) => {
+    await accounts.disconnect(z.enum(providers).parse(req.params.id));
+    res.json({ disconnected: true });
   });
   diagnostics(app,store,runs);
   function library() {

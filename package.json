@@ -19,8 +19,9 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "2.1.325",
     "@github/copilot": "1.0.112",
-    "@openai/codex": "0.169.0",
+    "@github/copilot-sdk": "^1.0.34",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@openai/codex": "0.169.0",
     "@playwright/mcp": "0.0.85",
     "@playwright/test": "1.65.1",
     "@xyflow/react": "12.12.1",

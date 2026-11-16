@@ -16,7 +16,7 @@ npm run setup:browser
 npm run dev
 ```
 
-Open [the local workspace](http://127.0.0.1:4320). Connect **one Codex, Claude or GitHub Copilot account** in Settings. Sign-in opens in your browser through the provider’s official CLI. An existing Codex or Claude session can also be reused.
+Open [the local workspace](http://127.0.0.1:4320). Connect **one Codex, Claude or GitHub Copilot account** in Settings. The official clients use private application sessions instead of importing your personal CLI sessions. Copilot opens GitHub in the browser where you click Connect; **Open sign-in** is available if the popup is blocked. If Copilot asks which account to use or requests permission to store a credential without encryption, answer in Settings. Authorization is not complete until the provider confirms the connection. You can cancel a pending login or disconnect this application's account without logging out of your personal tools. Copilot sign-in expires after ten minutes.
 
 ## Your first exploration
 
@@ -49,7 +49,7 @@ Each report lists remaining gaps. Choose a visible browser if you need to sign i
 
 The server listens on loopback. Settings, run history, evidence, traces and Gherkin files live under `.data/`, which Git ignores. A fresh clone starts with an empty library. The theme follows your system on first visit, and the appearance button saves your choice in the browser.
 
-Your selected AI provider receives the prompt, selected context and browser observations. **Review files** in Settings shows which context documents will be included. Provider credentials stay in the official CLI stores. Traces and exported suites can contain page content and form data, so review them before sharing.
+Your selected AI provider receives the prompt, selected context and browser observations. **Review files** in Settings shows which context documents will be included. Provider credentials use private official-client stores under `.data/accounts/`, with restricted directory permissions. Do not share this directory. A connection made in Characterize can persist across restarts; global CLI sessions are not imported. Temporary Copilot authorization links are cleared when sign-in completes, fails or is cancelled. Traces and exported suites can contain page content and form data, so review them before sharing.
 
 | Setting | Purpose |
 | --- | --- |

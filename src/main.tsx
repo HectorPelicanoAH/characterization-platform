@@ -1,7 +1,7 @@
 import { ThemeToggle } from "./ThemeToggle";
 import { Diagnosis } from "./Diagnosis";
 import { Library } from "./Library";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowDownToLine,
@@ -109,6 +109,22 @@ function App() {
     directories: [],
   });
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const loginTab = useRef<Window | null>(null);
+  useEffect(() => () => {
+    loginTab.current?.close();
+  }, []);
+  useEffect(() => {
+    const tab = loginTab.current;
+    if (!tab) return;
+    const login = accounts.find(account => account.id === "copilot")?.login;
+    if (login?.url && login.status === "running" && !login.prompt) {
+      loginTab.current = null;
+      if (!tab.closed) tab.location.replace(login.url);
+    } else if (login && (login.status !== "running" || login.prompt)) {
+      tab.close();
+      loginTab.current = null;
+    }
+  }, [accounts]);
   const [history, setHistory] = useState<(Run & { flowCount: number; removedFromRecent?:boolean })[]>([]);
   const [run, setRun] = useState<Run>();
   const [error, setError] = useState("");
@@ -177,16 +193,19 @@ function App() {
       setSettings(saved);
       setAccounts(accountList);
       setHistory(previous.filter(r=>!r.removedFromRecent));
-      const first = accountList.find((a) => a.connected);
       const latest = previous[0];
-      setInput(old => ({ ...old, url: latest?.url ?? "", prompt: latest?.prompt ?? "", provider: first?.id ?? old.provider }));
-      if (first) {
-        setPage("explore");
-      }
+      setInput(old => ({ ...old, url: latest?.url ?? "", prompt: latest?.prompt ?? "" }));
       setLoaded(true);
     });
   }, []);
   const loggingIn = accounts.some((a) => a.login?.status === "running");
+  useEffect(() => {
+    setInput(old => {
+      if (accounts.some(account => account.id === old.provider && account.connected)) return old;
+      const connectedAccount = accounts.find(account => account.connected);
+      return connectedAccount ? { ...old, provider: connectedAccount.id, model: "", effort: "default" } : old;
+    });
+  }, [accounts]);
   useEffect(() => {
     if (!loaded) return;
     let alive = true;
@@ -197,7 +216,7 @@ function App() {
       .then((value) => {
         if (alive) setModels(value);
       })
-      .catch(() => {});
+      .catch((error) => { if (alive) setError("Could not load models: " + error.message); });
     return () => {
       alive = false;
     };
@@ -432,12 +451,28 @@ function App() {
                             account?.login?.status === "running" ||
                             !account?.installed
                           }
-                          onClick={() =>
+                          onClick={() => {
+                            if (id === "copilot") {
+                              loginTab.current?.close();
+                              const tab = window.open("about:blank", "_blank");
+                              if (tab) {
+                                tab.opener = null;
+                                tab.document.title = "Connect Copilot";
+                                tab.document.body.textContent = "Preparing GitHub sign-in...";
+                                loginTab.current = tab;
+                              }
+                            }
                             void attempt("login", async () => {
-                              await api(`/accounts/${id}/login`, {});
-                              await refreshAccounts();
+                              try {
+                                await api(`/accounts/${id}/login`, {});
+                                await refreshAccounts();
+                              } catch (error) {
+                                loginTab.current?.close();
+                                loginTab.current = null;
+                                throw error;
+                              }
                             })
-                          }
+                          }}
                         >
                           {account?.login?.status === "running" ? (
                             <>
@@ -454,6 +489,26 @@ function App() {
                             </>
                           )}
                         </button>
+                        {account?.connected && (
+                          <button className="text-button" disabled={Boolean(busy)} onClick={() => void attempt("disconnect", async () => {
+                            await api(`/accounts/${id}/disconnect`, {});
+                            await refreshAccounts();
+                          })}>Disconnect</button>
+                        )}
+                        {account?.login?.status === "running" && account.login.url && (
+                          <a className="text-button" href={account.login.url} target="_blank" rel="noopener noreferrer">Open sign-in <ExternalLink size={14} /></a>
+                        )}
+                        {account?.login?.status === "running" && account.login.prompt && (
+                          <div role="group" aria-label="Confirm connection">
+                            <p>{account.login.prompt.message}</p>
+                            {account.login.prompt.choices.map(choice => (
+                              <button key={choice.value} className="button secondary" disabled={Boolean(busy)} onClick={() => void attempt("answer-login", async () => {
+                                await api(`/accounts/${id}/answer`, { value: choice.value });
+                                await refreshAccounts();
+                              })}>{choice.label}</button>
+                            ))}
+                          </div>
+                        )}
                         {!account?.installed && (
                           <small className="provider-note">
                             CLI unavailable. Run npm install.
