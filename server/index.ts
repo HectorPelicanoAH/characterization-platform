@@ -1,4 +1,4 @@
-import { libraryEntry, consolidatedLibrary } from "./library.ts";
+import { libraryEntry, consolidatedLibrary, namedReport } from "./library.ts";
 import {diagnostics} from "./diagnostics.ts";
 import express from "express";
 import { resolve, join } from "node:path";
@@ -12,6 +12,7 @@ import { Accounts } from "./providers.ts";
 import { collectContext } from "./context.ts";
 import { Runs } from "./runs.ts";
 import { codexModels } from "./catalog.ts";
+import { Refinements, refinementAI } from "./refinements.ts";
 
 export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -20,6 +21,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   );
   const accounts = new Accounts(store.root);
   const runs = new Runs(store, accounts);
+  const refinements = new Refinements(store, id => runs.get(id), refinementAI(store, accounts));
   let catalogCache:
     { at: number; models: Awaited<ReturnType<typeof codexModels>> } | undefined;
   const app = express();
@@ -50,6 +52,8 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   });
   app.use(express.json({ limit: "256kb" }));
   app.get("/api/settings", (_req, res) => res.json(store.settings()));
+  app.get("/api/characterization", (_req, res) => res.json(store.characterization()));
+  app.put("/api/characterization", (req, res) => res.json(store.saveCharacterization(req.body)));
   app.put("/api/settings", async (req, res) => {
     const settings = settingsSchema.parse(req.body);
     await collectContext(settings.directories);
@@ -111,6 +115,23 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     return consolidatedLibrary(store.runs().map(run => libraryEntry(store, runs.get(run.id) ?? run)).filter(entry => entry.scenarios.length));
   }
   library(); // Recover earlier runs on startup without inference.
+  app.post("/api/library/:id/:scenario/refine", (req, res) => {
+    const input = z.object({ comment: z.string().trim().min(1).max(12000), parentId: z.string().uuid().optional() }).parse(req.body);
+    res.status(202).json(refinements.start(req.params.id, req.params.scenario, input.comment, input.parentId));
+  });
+  app.get("/api/refinements/:id", (req, res) => {
+    const job = refinements.get(req.params.id);
+    if (!job) return res.status(404).json({ error: "Refinement preview expired. Start a new request." });
+    res.json(job);
+  });
+  app.post("/api/refinements/:id/apply", (req, res) => {
+    const { targets } = z.object({ targets: z.array(z.string().max(110)).min(1).max(30) }).parse(req.body);
+    res.json(refinements.apply(req.params.id, targets));
+  });
+  app.delete("/api/refinements/:id", (req, res) => {
+    refinements.cancel(req.params.id);
+    res.json({ cancelled: true });
+  });
   app.delete("/api/recent/:id",(req,res)=>{
     const run=store.run(req.params.id);
     if(!run)return res.status(404).json({error:"Exploration not found"});
@@ -180,6 +201,9 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
     runs.cancel(req.params.id);
     res.json({ cancelled: true });
   });
+  app.post("/api/runs/:id/resume", async (req, res) => {
+    res.status(202).json(await runs.resumeReport(req.params.id));
+  });
   app.get("/api/runs/:id/export", (req, res) => {
     const run = runs.get(req.params.id);
     if (!run?.report)
@@ -187,7 +211,8 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
         .status(404)
         .json({ error: "No results available to export yet." });
     const files: Record<string, Uint8Array> = {
-      "report.json": strToU8(JSON.stringify(run.report, null, 2)),
+      "report.json": strToU8(JSON.stringify(namedReport(store,run), null, 2)),
+      "scenarios.feature": strToU8(libraryEntry(store,run).feature),
       "evidence.json": strToU8(JSON.stringify(run.evidence, null, 2)),
       "package.json": strToU8(
         JSON.stringify(
@@ -258,6 +283,7 @@ export async function startServer(port = Number(process.env.PORT ?? 4320)) {
   );
   const close = async () => {
     runs.shutdown();
+    refinements.shutdown();
     accounts.shutdown();
     await vite?.close();
     server.close();

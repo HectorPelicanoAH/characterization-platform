@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import { reportSchema, type Run } from "../shared/model.ts";
 import { Store } from "./store.ts";
+import { renderScenario } from "../shared/scenario.ts";
+import { readScenarioNames, renameGherkin, scenarioNameKey } from "./scenario-names.ts";
 
 const line = (s:string) => s.replace(/\s+/g," ").trim();
 const normalizeClause = (value: string) => line(value).normalize("NFKC").toLowerCase();
@@ -29,6 +31,8 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
   const ok=new Set(events.filter(e=>e.ok).map(e=>e.id));
   const scenarios:{title:string;state:string;gherkin:string;legacy:string;ids:number[]}[]=[];
   const host=new URL(run.url).hostname;
+  const refinements=store.refinements();
+  const names=readScenarioNames(join(store.root,"scenario-names.json"));
   for (const raw of Array.isArray(flows)?flows:[]) {
     const parsed=reportSchema.shape.flows.element.safeParse(raw);
     if(!parsed.success) continue;
@@ -40,17 +44,21 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
     const contextEvent = firstEvent?.tool === "browser_snapshot" ? firstEvent : before?.ok ? before : undefined;
     const screen = contextEvent && screensFor([contextEvent.id], [contextEvent])[0];
     const given = f.given || (screen && !screen.label.startsWith("/") ? "the user is on the " + screen.label + " screen" : "");
-    const gherkin = ["Scenario: "+line(f.title), ...(given ? ["  Given "+line(given)] : []),
-      ...f.steps.map((step,i)=>(i ? "  And " : "  When ")+line(step)), "  Then "+line(f.observed)].join("\n");
-    scenarios.push({title:f.title,state,ids:f.evidenceIds,gherkin,legacy:[
+    let gherkin: string;
+    try { gherkin = renderScenario({title:f.title,given:given?[given]:[],when:f.steps,then:[f.observed],parameters:f.parameters??null}); }
+    catch { continue; }
+    const savedRule = run.reportRecovery && (run.discoveries ?? []).some(rule => rule.capability === f.title &&
+      rule.given === f.given && f.steps.length === 1 && rule.action === f.steps[0] && rule.observed === f.observed &&
+      JSON.stringify(rule.evidenceIds) === JSON.stringify(f.evidenceIds));
+    scenarios.push({title:f.title,state,ids:f.evidenceIds,gherkin,legacy:savedRule?gherkin:[
       "Escenario: "+line(f.title),"  Dado que la URL inicial es "+run.url,
       ...f.steps.map((s,i)=>(i?"  Y ":"  Cuando ")+line(s)),
       "  Entonces "+line(f.observed)].join("\n")});
   }
   for (const discovery of run.discoveries ?? []) {
-    const gherkin = ["Scenario: " + line(discovery.capability),
-      "  Given " + line(discovery.given), "  When " + line(discovery.action),
-      "  Then " + line(discovery.observed)].join("\n");
+    let gherkin: string;
+    try { gherkin = renderScenario({title:discovery.capability,given:[discovery.given],when:[discovery.action],then:[discovery.observed],parameters:discovery.parameters??null}); }
+    catch { continue; }
     scenarios.push({ title: discovery.capability, state: "Observed rule", ids: discovery.evidenceIds,
       gherkin, legacy: gherkin });
   }
@@ -81,12 +89,23 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
     // Preserve scenario IDs (including existing exclusions) across display languages.
     const {legacy,...scenario}=s;
     const id = createHash("sha256").update(JSON.stringify([s.title,s.ids,legacy])).digest("hex");
-    const clauses = s.gherkin.split("\n").slice(1).map(normalizeClause);
+    const refinement=refinements[run.id+"/"+id];
+    if(refinement) {
+      scenario.title=refinement.text.title;
+      scenario.gherkin=renderScenario(refinement.text);
+      scenario.state="Refined · review tests";
+    }
+    const nameKey=scenarioNameKey(run.url,scenario.gherkin);
+    if(names[nameKey]) {
+      scenario.title=names[nameKey].title;
+      scenario.gherkin=renameGherkin(scenario.gherkin,scenario.title);
+    }
+    const clauses = scenario.gherkin.split("\n").slice(1).map(normalizeClause);
     const fingerprint = createHash("sha256").update(JSON.stringify([
       new URL(run.url).origin, screens.map(screen => screen.key),
-      s.state === "Observed draft" ? "screen-draft" : clauses,
+      scenario.state === "Observed draft" ? "screen-draft" : clauses,
     ])).digest("hex");
-    return {...scenario,screens,group,groupKey,id,fingerprint,
+    return {...scenario,screens,group,groupKey,id,fingerprint,nameKey,
       occurrences:[{runId:run.id,scenarioId:id,ids:s.ids,createdAt:run.createdAt}]};
   }).sort((a,b)=>a.group.localeCompare(b.group,"es")||a.title.localeCompare(b.title,"es"));
   const exclusions=new Set(store.exclusions(run.id).scenarios);
@@ -109,6 +128,15 @@ export function libraryEntry(store:Store, run:Run, includeExcluded=false) {
   return {id:run.id,url:run.url,status:run.status,createdAt:run.createdAt,scenarios:includeExcluded?classified:visible,feature};
 }
 export type LibraryEntry=ReturnType<typeof libraryEntry>;
+
+export function namedReport(store: Store, run: Run) {
+  if (!run.report) return;
+  const names=readScenarioNames(join(store.root,"scenario-names.json"));
+  return {...run.report,flows:run.report.flows.map(flow=>{
+    const gherkin=renderScenario({title:flow.title,given:[flow.given],when:flow.steps,then:[flow.observed],parameters:flow.parameters??null});
+    return {...flow,title:names[scenarioNameKey(run.url,gherkin)]?.title??flow.title};
+  })};
+}
 
 export function consolidatedLibrary(entries: LibraryEntry[]): LibraryEntry[] {
   const owners = new Map<string, LibraryEntry["scenarios"][number]>();

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parametersSchema } from "./scenario.ts";
 
 export const discoverySchema = z.object({
   capabilityKey: z.string().regex(/^[a-z][a-z0-9-]{1,79}$/),
@@ -14,6 +15,7 @@ export const discoverySchema = z.object({
   })).max(12).default([]),
   evidenceIds: z.array(z.number().int().positive()).min(1).max(30),
   screenEvidenceId: z.number().int().positive(),
+  parameters: parametersSchema.nullable().optional(),
 });
 export type Discovery = z.infer<typeof discoverySchema>;
 export type RecordedDiscovery = Discovery & { id: string; at: string; screenEvidenceIds?: number[] };

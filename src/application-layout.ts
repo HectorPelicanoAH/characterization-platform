@@ -33,7 +33,7 @@ export function applicationLayout(map: ApplicationMap, detail: string, showRules
   const included = map.nodes.filter(node => {
     if (!showServices && ["service", "operation"].includes(node.kind)) return false;
     if (!showRules && node.kind === "rule") return false;
-    if (detail === "screens" && !["screen", "service"].includes(node.kind)) return false;
+    if (detail === "screens" && !["screen", "service", ...(showRules ? ["rule"] : [])].includes(node.kind)) return false;
     if (detail === "components" && ["element", "operation"].includes(node.kind)) return false;
     if (focusNode && focusNode.kind !== "screen")
       return focusedEntities.has(node.id) || (node.kind === "screen" && (screenIds.includes(node.id) || neighbors.has(node.id)));
@@ -54,28 +54,34 @@ export function applicationLayout(map: ApplicationMap, detail: string, showRules
   }
   const sizes = new Map<string, { width: number; height: number }>();
   const positions = new Map<string, { x: number; y: number }>();
+  function pack(entities: ApplicationNode[], gap: number, padding: number, header: number) {
+    const columnWidth = Math.max(...entities.map(entity => sizes.get(entity.id)!.width));
+    let best: { width: number; height: number; score: number; placements: Map<string, { x: number; y: number }> } | undefined;
+    for (let columns = 1; columns <= Math.min(6, entities.length); columns++) {
+      const heights = Array<number>(columns).fill(header), placements = new Map<string, { x: number; y: number }>();
+      for (const entity of entities) {
+        const column = heights.indexOf(Math.min(...heights));
+        placements.set(entity.id, { x: padding + column * (columnWidth + gap), y: heights[column] });
+        heights[column] += sizes.get(entity.id)!.height + gap;
+      }
+      const width = padding * 2 + columns * columnWidth + (columns - 1) * gap;
+      const height = Math.max(...heights) - gap + padding;
+      const score = Math.abs(Math.log(width / height / 1.3));
+      if (!best || score < best.score) best = { width, height, score, placements };
+    }
+    return best!;
+  }
   function measure(entity: ApplicationNode) {
     const nested = children.get(entity.id) ?? [];
     if (!nested.length) {
-      const size = { width: entity.kind === "screen" ? 360 : 250, height: entity.kind === "screen" ? 116 : 72 };
+      const size = { width: entity.kind === "screen" ? 360 : 250, height: entity.kind === "screen" ? 116 : 96 };
       sizes.set(entity.id, size);
       return size;
     }
-    const childSizes = nested.map(child => measure(child));
-    const flat = nested.every(child => !(children.get(child.id)?.length));
-    const columns = flat && nested.length > 8 ? nested.length > 30 ? 4 : 2 : 1;
-    const columnWidth = Math.max(...childSizes.map(size => size.width));
-    const rowHeight = Math.max(...childSizes.map(size => size.height)) + 12;
-    let y = 76;
-    nested.forEach((child,index) => {
-      if (columns === 1) {
-        positions.set(child.id, { x: 20, y });
-        y += childSizes[index].height + 12;
-      } else positions.set(child.id, { x: 20 + (index % columns) * (columnWidth + 12), y: 76 + Math.floor(index / columns) * rowHeight });
-    });
-    if (columns > 1) y = 76 + Math.ceil(nested.length / columns) * rowHeight;
-    const width = Math.max(entity.kind === "screen" ? 420 : 290, columns * (columnWidth + 12) + 28);
-    const size = { width, height: y + 8 };
+    nested.forEach(child => measure(child));
+    const packed = pack(nested, 16, 20, 80);
+    for (const [id, position] of packed.placements) positions.set(id, position);
+    const size = { width: Math.max(entity.kind === "screen" ? 420 : 290, packed.width), height: packed.height };
     sizes.set(entity.id, size);
     return size;
   }
@@ -89,17 +95,9 @@ export function applicationLayout(map: ApplicationMap, detail: string, showRules
   let x = 0;
   for (const lane of lanes) {
     if (!lane.length) continue;
-    let y = 0;
-    const columns = lane[0].kind === "screen" && lane.length > 3 ? 2 : 1;
-    const width = Math.max(...lane.map(n => sizes.get(n.id)!.width));
-    const columnY = [0, 0];
-    lane.forEach((entity, index) => {
-      const column = index % columns;
-      y = columnY[column];
-      positions.set(entity.id, { x: x + column * (width + 150), y });
-      columnY[column] = y + sizes.get(entity.id)!.height + 110;
-    });
-    x += columns * (width + 150) + 90;
+    const packed = pack(lane, 110, 0, 0);
+    for (const [id, position] of packed.placements) positions.set(id, { x: position.x + x, y: position.y });
+    x += packed.width + 180;
   }
   const nodes: EntityNode[] = [];
   function append(entity: ApplicationNode) {
@@ -121,7 +119,7 @@ export function applicationLayout(map: ApplicationMap, detail: string, showRules
     while (entity && !visible.has(entity.id)) entity = all.get(entity.parentId ?? "");
     return entity?.id ?? (contextScreenId && visible.has(contextScreenId) ? contextScreenId : undefined);
   }
-  const colors: Record<string, string> = { navigates: "#608fce", uses: "#a487c8", calls: "#c38942" };
+  const colors: Record<string, string> = { navigates: "var(--map-accent)", uses: "#978cae", calls: "#b29d7c", explains: "#829db5" };
   const relations = new Map<string, RelationEdge>();
   for (const relation of map.edges) {
     if (relation.kind === "contains") continue;
@@ -151,4 +149,17 @@ export function applicationLayout(map: ApplicationMap, detail: string, showRules
     }
   }
   return { nodes, edges: [...relations.values()] };
+}
+
+/** Inspector relations never determine which entities appear in the graph. */
+export function applicationConnections(map: ApplicationMap, layout: { nodes: EntityNode[]; edges: RelationEdge[] }, selectedId?: string) {
+  if (!selectedId) return [];
+  const visible = new Set(layout.nodes.map(node => node.id));
+  const connections = layout.edges.filter(edge => edge.source === selectedId || edge.target === selectedId);
+  for (const edge of map.edges) {
+    if (edge.kind !== "contains" || !visible.has(edge.source) || !visible.has(edge.target)) continue;
+    if (edge.source === selectedId || edge.target === selectedId)
+      connections.push({ id: edge.id, source: edge.source, target: edge.target, label: "Contains", data: { ids: [edge.id] } });
+  }
+  return connections;
 }

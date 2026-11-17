@@ -224,6 +224,30 @@ test("persisted runs survive restart and running work is never falsely completed
   }
 });
 
+test("characterization settings survive clearing recordings independently of Settings", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "characterize-form-"));
+  try {
+    const store = new Store(dir);
+    const saved = { context: "Keep these instructions", directories: [] };
+    store.saveSettings(saved);
+    const last: Run = { ...input, provider: "copilot", model: "fixture-model", effort: "xhigh", scope: "exhaustive", prompt: "Focus on catalog", headed: false, serviceMapEnabled: true,
+      id: randomUUID(), createdAt: new Date().toISOString(), status: "completed", phase: "Complete", logs: [], warnings: [], contextFiles: [], evidence: [] };
+    store.saveRun(last);
+    const draft = store.characterization();
+    assert.equal(draft.scope, "exhaustive");
+    assert.equal(draft.provider, "copilot");
+    store.saveCharacterization(draft);
+    await rm(join(dir, "runs"), { recursive: true });
+    const restarted = new Store(dir);
+    assert.deepEqual(restarted.runs(), []);
+    assert.deepEqual(restarted.characterization(), draft);
+    assert.deepEqual(restarted.settings(), saved);
+    restarted.saveCharacterization({ ...draft, url: "https://", prompt: "An unfinished draft" });
+    assert.equal(new Store(dir).characterization().url, "https://");
+    assert.throws(() => runInputSchema.parse(restarted.characterization()), "An unfinished URL is saved as a draft, but cannot start an exploration");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test("worker cancellation and timeout terminate actual child processes", async () => {
   const abort = new AbortController();
   const pending = execute(

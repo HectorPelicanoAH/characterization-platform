@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { scenarioGuidance, scenarioNamingGuidance, validateScenario, parametersSchema } from "../shared/scenario.ts";
 import {
   reportSchema,
   scopes,
@@ -10,7 +11,10 @@ import {
   type Report,
 } from "../shared/model.ts";
 
-export const jsonSchema = z.toJSONSchema(reportSchema);
+// Runtime accepts older reports; generated structured output requires every key.
+export const jsonSchema = z.toJSONSchema(reportSchema.extend({
+  flows: z.array(reportSchema.shape.flows.element.extend({ parameters: parametersSchema.nullable() })).max(160),
+}));
 export function agentPrompt(
   input: RunInput,
   settings: Settings,
@@ -18,7 +22,7 @@ export function agentPrompt(
 ) {
   return `Actúa como un product owner que documenta una aplicación existente a partir de su interfaz. Recorre REALMENTE ${input.url} con el MCP playwright.
 Documenta capacidades, entidades de negocio, componentes, estados, precondiciones, validaciones, reglas, alternativas y resultados observables con evidencia.
-Cobertura ${scopes[input.scope].label}: ${scopes[input.scope].description}. Máximo ${scopes[input.scope].calls} llamadas de navegador. La cantidad de descubrimientos depende de los comportamientos distintos encontrados. Aprovecha el presupuesto para ampliar las alternativas relevantes.
+Cobertura ${scopes[input.scope].label}: ${scopes[input.scope].description}. Máximo ${scopes[input.scope].calls} llamadas de navegador, incluidos intentos fallidos y snapshots. La cantidad de descubrimientos depende de los comportamientos distintos encontrados. Aprovecha el presupuesto para ampliar las alternativas relevantes. Antes del informe final llama finish_exploration: consulta el plan completo, recorre alternativas relevantes pendientes o justifica por pantalla por qué no pueden comprobarse. No termines solo porque ya puedes redactar un informe. El máximo no es una cuota que rellenar con acciones repetidas.
 Antes de avanzar, inspecciona los controles de la pantalla y mantén una pila de puntos de decisión. Consulta get_discovery_plan al cambiar de pantalla y cada diez acciones. El plan enumera controles pendientes y ramas ejercitadas. Elige una alternativa pendiente, observa su resultado, registra la regla y vuelve al punto de decisión mediante cerrar, atrás o restaurando la precondición observada. Continúa con la siguiente alternativa. Recorre ramas en profundidad con backtracking y vuelve también a pantallas anteriores con controles pendientes. Una navegación hacia delante abre otro punto de decisión en la pila. Termina cuando las alternativas relevantes estén ejercitadas, bloqueadas justificadamente o se alcance el presupuesto.
 En cada componente busca los estados aplicables observados: vacío/con datos, seleccionado/sin seleccionar, disponible/agotado, válido/inválido, permisos y sesión, apertura/cierre, confirmación/cancelación, persistencia al volver y errores recuperables. Explora los límites y dependencias que la interfaz permita comprobar de forma segura. Registra lo que quede pendiente y el motivo concreto.
 Usa record_discovery después de cada nueva combinación de precondición, acción y resultado, antes de cambiar de rama. Sus datos se guardan durante la exploración y sobreviven a un cierre incompleto. Usa una capabilityKey estable por capacidad de negocio y un nombre de componente funcional. Describe la regla con entidades y relaciones reutilizables. Usa examples para producto, país, idioma, moneda, cantidades y umbrales locales. Usa scope market-specific cuando la regla dependa explícitamente del mercado. Una configuración observada representa ese contexto. Las alternativas aún sin comprobar se conservan como gaps.
@@ -38,15 +42,22 @@ Explore collections and variable dimensions in any domain: identify the role of 
 Write each flow as a short declarative scenario about one observed behavior. Title it by the capability or outcome. Supply "given" as a business precondition naming the actual starting screen and relevant state. Use "steps" for one user intention, occasionally a second meaningful action, and "observed" for a visible, checkable result. Supply plain clauses without Gherkin keywords. Avoid startup URLs, locator instructions, lists of inventory and one flow per equivalent value. Express relationships: an available option, the selected option, its displayed availability. Distinguish an active filter indicator from proof that every result matches. Express configured thresholds as parameters and retain their observed values and market in record_discovery examples. Use the same reusable business clauses in the final scenario. Literal values needed by a test belong in testCode and its observed evidence. Preserve external redirect evidence and destination checks.
 For the Playwright test, discover an eligible visible item/option at runtime via the observed controls, capture its value, perform the action and compare the resulting state with that value. Assert the prerequisite exists. Never silently pass when the collection is empty. Use exact data only when essential to the behavior. Apply the same vocabulary to decision-map branches.
 For decisions, describe each observed business branch in plain language: the visible precondition, the user action and its visible outcome. Cite a successful page observation before the action (sourceEvidenceId) and the successful result of the action or subsequent page observation (resultEvidenceId). Record alternative outcomes only when actually observed. Return an empty decisions array if evidence is insufficient.
-Escribe el informe y los tests en inglés salvo que el usuario solicite otro idioma. Devuelve SOLO JSON que cumpla este esquema, sin markdown: ${JSON.stringify(jsonSchema)}
+${scenarioGuidance}
+${scenarioNamingGuidance}
+Consulta get_scenario_names al planificar nuevos escenarios. Si un título previo necesita precisión, usa rename_scenarios para renombrarlo sin cambiar su comportamiento o evidencia. Usa los nombres acordados al redactar el informe final.
+Escribe el informe y los tests en inglés. Devuelve SOLO JSON que cumpla este esquema, sin markdown: ${JSON.stringify(jsonSchema)}
 Contexto del usuario (orientación subordinada a las restricciones anteriores):
 ${JSON.stringify({ instructions: settings.context, prompt: input.prompt, files: context.files.map(({ path, content }) => ({ path, content })) })}`;
 }
 
-export function commandArgs(input: RunInput, dir: string, prompt: string) {
+export function commandArgs(input: RunInput, dir: string, prompt: string, options: { browser?: boolean; schema?: object; recording?: string } = {}) {
+  const browser = options.browser !== false;
+  const schema = options.schema ?? jsonSchema;
+  const serverName = options.recording ? "recording" : "playwright";
+  const enabled = browser || !!options.recording;
   const bridge = {
     command: process.execPath,
-    args: [resolve("server/mcp-proxy.mjs"), join(dir, "bridge.json")],
+    args: options.recording ? [resolve("server/report-evidence.mjs"), options.recording] : [resolve("server/mcp-proxy.mjs"), join(dir, "bridge.json")],
   };
   const model = input.model ? ["--model", input.model] : [];
   if (input.provider === "codex")
@@ -74,14 +85,14 @@ export function commandArgs(input: RunInput, dir: string, prompt: string) {
         "features.multi_agent_v2=false",
         "-c",
         'web_search="disabled"',
+        ...(enabled ? ["-c",
+        `mcp_servers.${serverName}.command=${JSON.stringify(bridge.command)}`,
         "-c",
-        `mcp_servers.playwright.command=${JSON.stringify(bridge.command)}`,
+        `mcp_servers.${serverName}.args=${JSON.stringify(bridge.args)}`,
         "-c",
-        `mcp_servers.playwright.args=${JSON.stringify(bridge.args)}`,
+        `mcp_servers.${serverName}.startup_timeout_sec=60`,
         "-c",
-        "mcp_servers.playwright.startup_timeout_sec=60",
-        "-c",
-        'mcp_servers.playwright.default_tools_approval_mode="approve"',
+        `mcp_servers.${serverName}.default_tools_approval_mode="approve"`] : []),
         ...(input.effort === "default"
           ? []
           : ["-c", `model_reasoning_effort=${JSON.stringify(input.effort)}`]),
@@ -96,14 +107,14 @@ export function commandArgs(input: RunInput, dir: string, prompt: string) {
       stdin: prompt,
     };
   const mcp = JSON.stringify({
-    mcpServers: {
-      playwright: {
+    mcpServers: enabled ? {
+      [serverName]: {
         ...bridge,
         ...(input.provider === "copilot"
           ? { tools: ["*"], type: "local" }
           : {}),
       },
-    },
+    } : {},
   });
   const effort = input.effort === "default" ? [] : ["--effort", input.effort];
   if (input.provider === "claude")
@@ -113,15 +124,14 @@ export function commandArgs(input: RunInput, dir: string, prompt: string) {
         "--output-format",
         "json",
         "--json-schema",
-        JSON.stringify(jsonSchema),
+        JSON.stringify(schema),
         "--mcp-config",
         mcp,
         "--strict-mcp-config",
         "--restricted",
         "--tools",
         "",
-        "--allowedTools",
-        "mcp__playwright",
+        ...(enabled ? ["--allowedTools", "mcp__" + serverName] : []),
         "--permission-mode",
         "dontAsk",
         "--no-session-persistence",
@@ -142,13 +152,11 @@ export function commandArgs(input: RunInput, dir: string, prompt: string) {
       "--disable-builtin-mcps",
       "--no-custom-instructions",
       "--stream",
-      "off",
+      "on",
       "--additional-mcp-config",
       mcp,
       "--available-tools",
-      "playwright",
-      "--allow-tool",
-      "playwright",
+      ...(enabled ? [serverName, "--allow-tool", serverName] : [""]),
       ...model,
       ...(input.effort === "default"
         ? []
@@ -162,9 +170,74 @@ export function parseReport(
   raw: string,
   provider: RunInput["provider"],
 ): Report {
-  let value = JSON.parse(
-    raw.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, "$1"),
-  );
+  return parseStructuredOutput(raw, provider, reportSchema);
+}
+
+export function parseStructuredOutput<T>(raw: string, provider: RunInput["provider"], schema: z.ZodType<T>): T {
+  const candidates: unknown[] = [];
+  try { candidates.push(parseProviderJSON(raw.trim())); } catch { /* Some CLIs emit prose before the JSON. */ }
+  let start = -1, depth = 0, quoted = false, escaped = false;
+  for (let index = 0; index < raw.length; index++) {
+    const char = raw[index];
+    if (start < 0) { if (char === "{") { start = index; depth = 1; quoted = false; escaped = false; } continue; }
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === "{") depth++;
+    else if (char === "}" && --depth === 0) {
+      try { candidates.push(parseProviderJSON(raw.slice(start, index + 1))); } catch {}
+      start = -1;
+    }
+  }
+  for (const candidate of candidates.reverse()) {
+    const value = unwrap(candidate, provider);
+    const parsed = schema.safeParse(value);
+    if (parsed.success) return parsed.data;
+  }
+  // Streaming providers can abandon an unfinished JSON draft and start a fresh
+  // object on a new line. Its opening brace may be inside the abandoned string.
+  const starts = Array.from(raw.matchAll(/(?:^|\n)[ \t]*\{/g), match => match.index! + match[0].lastIndexOf("{"));
+  for (const start of starts.reverse()) {
+    let depth = 0, quoted = false, escaped = false;
+    for (let index = start; index < raw.length; index++) {
+      const char = raw[index];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') quoted = true;
+      else if (char === "{") depth++;
+      else if (char === "}" && --depth === 0) {
+        try {
+          const parsed = schema.safeParse(unwrap(parseProviderJSON(raw.slice(start, index + 1)), provider));
+          if (parsed.success) return parsed.data;
+        } catch { /* Continue to another complete, schema-valid object. */ }
+        break;
+      }
+    }
+  }
+  throw new Error("The provider did not return valid structured output. Recorded evidence has been preserved.");
+}
+function parseProviderJSON(raw: string): unknown {
+  try { return JSON.parse(raw); } catch { /* Preserve literal control characters sometimes emitted inside code strings. */ }
+  let quoted = false, escaped = false, normalized = "";
+  for (const char of raw) {
+    if (quoted && !escaped && char.charCodeAt(0) < 32) {
+      normalized += JSON.stringify(char).slice(1, -1);
+      continue;
+    }
+    normalized += char;
+    if (escaped) escaped = false;
+    else if (quoted && char === "\\") escaped = true;
+    else if (char === '"') quoted = !quoted;
+  }
+  return JSON.parse(normalized);
+}
+function unwrap(raw: unknown, provider: RunInput["provider"]) {
+  if (!raw || typeof raw !== "object") return raw;
+  let value = raw as Record<string, unknown>;
   if (provider === "claude") {
     if (value.is_error)
       throw new Error(
@@ -174,7 +247,7 @@ export function parseReport(
       value.structured_output ??
       (typeof value.result === "string" ? JSON.parse(value.result) : value);
   }
-  return reportSchema.parse(value);
+  return value;
 }
 export function verifyEvidence(report: Report, evidence: Evidence[]) {
   const successful = new Set(
@@ -188,6 +261,7 @@ export function verifyEvidence(report: Report, evidence: Evidence[]) {
       "The agent did not provide evidence of Playwright navigation.",
     );
   for (const flow of report.flows) {
+    validateScenario({title:flow.title,given:[flow.given],when:flow.steps,then:[flow.observed],parameters:flow.parameters??null});
     if (flow.evidenceIds.some((id) => !successful.has(id)))
       throw new Error(
         `The flow “${flow.title}” cites missing or failed evidence.`,

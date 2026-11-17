@@ -1,4 +1,42 @@
 import { test, expect } from "@playwright/test";
+import { runInputSchema } from "../../shared/model";
+
+test.beforeEach(async ({ page }) => {
+  let draft = { ...runInputSchema.parse({ url: "https://fixture.test", provider: "codex" }), url: "" };
+  await page.route("**/api/characterization", route => {
+    if (route.request().method() === "PUT") draft = route.request().postDataJSON();
+    return route.fulfill({ json: draft });
+  });
+});
+
+test("Characterization keeps its full form after reload without recordings", async ({ page }) => {
+  await page.route("**/api/accounts", route => route.fulfill({ json: [{ id: "copilot", installed: true, connected: true }] }));
+  await page.route("**/api/models/copilot", route => route.fulfill({ json: [] }));
+  await page.route("**/api/runs", route => route.fulfill({ json: [] }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Characterization", exact: false }).first().click();
+  await page.getByLabel("Starting URL").fill("https://saved-form.test");
+  await page.getByLabel("What should the agent focus on?").fill("Focus on product variations");
+  await page.getByRole("radio", { name: /Exhaustive/ }).check();
+  await page.getByLabel("Model", { exact: true }).fill("fixture-model");
+  await page.getByLabel("Reasoning effort").selectOption("xhigh");
+  await page.getByLabel("Show the browser during exploration").uncheck();
+  await page.getByLabel("Prioritize unexplored paths").uncheck();
+  const saved = page.waitForResponse(response => response.url().endsWith("/api/characterization") && response.request().method() === "PUT" && response.request().postDataJSON().serviceMapEnabled === true);
+  await page.getByLabel("Generate service map").check();
+  await saved;
+  await page.reload();
+  await page.getByRole("button", { name: "Characterization", exact: false }).first().click();
+  await expect(page.getByLabel("Starting URL")).toHaveValue("https://saved-form.test");
+  await expect(page.getByLabel("What should the agent focus on?")).toHaveValue("Focus on product variations");
+  await expect(page.getByRole("radio", { name: /Exhaustive/ })).toBeChecked();
+  await expect(page.getByRole("combobox").filter({ has: page.locator("option[value='copilot']") })).toHaveValue("copilot");
+  await expect(page.getByLabel("Model", { exact: true })).toHaveValue("fixture-model");
+  await expect(page.getByLabel("Reasoning effort")).toHaveValue("xhigh");
+  await expect(page.getByLabel("Show the browser during exploration")).not.toBeChecked();
+  await expect(page.getByLabel("Prioritize unexplored paths")).not.toBeChecked();
+  await expect(page.getByLabel("Generate service map")).toBeChecked();
+});
 
 test("Copilot opens sign-in, asks for an account and disconnects", async ({ page, context }) => {
   let connected = false;

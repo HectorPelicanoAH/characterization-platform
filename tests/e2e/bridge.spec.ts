@@ -188,10 +188,27 @@ test("service map captures real MCP traffic, action windows, tabs and request de
       action:"request the order",observed:"the browser requests the selected order",
       evidenceIds:[2,3],screenEvidenceId:3 };
     expect((await client.callTool({name:"record_discovery",arguments:discovery})).isError).toBeFalsy();
+    const conflicting = { ...discovery, action: "request another observed order", observed: "the browser requests a different order" };
+    const rejectedName = await client.callTool({name:"record_discovery",arguments:conflicting});
+    expect(rejectedName.isError).toBe(true);
+    expect(JSON.stringify(rejectedName)).toContain("different behavior");
+    const names = JSON.parse(((await client.callTool({name:"get_scenario_names",arguments:{}})).content as {text:string}[])[0].text);
+    expect((await client.callTool({name:"rename_scenarios",arguments:{changes:[{key:names[0].key,title:"Request the selected order"}]}})).isError).toBeFalsy();
+    const renamed = JSON.parse(((await client.callTool({name:"get_scenario_names",arguments:{}})).content as {text:string}[])[0].text);
+    expect(renamed[0].title).toBe("Request the selected order");
     expect((await client.callTool({name:"record_discovery",arguments:{...discovery,evidenceIds:[999]}})).isError).toBe(true);
     const plan = await client.callTool({name:"get_discovery_plan",arguments:{}});
     expect(JSON.stringify(plan)).toContain("Open cart");
     expect(JSON.stringify(plan)).toContain("recordedRuleCount");
+    const screenPlan = JSON.parse((plan.content as {text:string}[])[0].text);
+    expect(screenPlan.remainingCalls).toBe(7);
+    const premature = await client.callTool({name:"finish_exploration",arguments:{reason:"budget_exhausted",detail:"All browser actions used",remaining:[]}});
+    expect(premature.isError).toBe(true);
+    const unreviewed = await client.callTool({name:"finish_exploration",arguments:{reason:"alternatives_exhausted",detail:"Relevant branches covered",remaining:[]}});
+    expect(unreviewed.isError).toBe(true);
+    const closure = await client.callTool({name:"finish_exploration",arguments:{reason:"blocked",detail:"Cart needs a separate authorized journey",remaining:screenPlan.screens.filter((screen:{pendingCount:number})=>screen.pendingCount).map((screen:{route:string})=>({route:screen.route,reason:"Outside this order-loading test charter"}))}});
+    expect(closure.isError).toBeFalsy();
+    expect(JSON.parse(await readFile(join(dir,"exploration-progress.json"),"utf8")).completion.reason).toBe("blocked");
     // Let the delayed fetch occur between MCP calls.
     await new Promise(resolve => setTimeout(resolve, 2300));
     const snapshot = await client.callTool({ name: "browser_snapshot", arguments: {} });
@@ -236,6 +253,7 @@ test("service map captures real MCP traffic, action windows, tabs and request de
     await page.getByLabel("Map detail").selectOption("elements");
     await page.getByLabel("Find map entity").fill(url);
     await page.locator(".entity-browser").getByRole("button",{name:url,exact:true}).click();
+    await page.locator(".application-inspector summary").filter({hasText:"Operations"}).click();
     await page.locator(".application-inspector").getByRole("button",{name:"GET /api/orders/{id}",exact:true}).click();
     await expect(page.locator(".entity-description")).toContainText("2 requests");
     await page.locator(".graph-evidence").getByRole("button",{name:"#3 · "+id.slice(0,8),exact:true}).click();

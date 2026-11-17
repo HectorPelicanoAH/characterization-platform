@@ -14,7 +14,7 @@ import { identify } from "../server/screens.ts";
 import { Store } from "../server/store.ts";
 import { libraryEntry } from "../server/library.ts";
 import { agentPrompt } from "../server/agent.ts";
-import { applicationLayout } from "../src/application-layout.ts";
+import { applicationLayout, applicationConnections } from "../src/application-layout.ts";
 
 const page = (id: number, path: string, body = "", tool = "browser_snapshot", element?: string): Evidence => ({
   id, tool, element, at: new Date().toISOString(), ok: true,
@@ -88,6 +88,22 @@ test("application graph promotes shared boundaries and links navigation, rules a
   const cart = map.nodes.find(node=>node.kind==="screen"&&node.label==="Cart")!;
   const focused = applicationLayout(map,"elements",false,true,cart.id);
   assert.equal(focused.nodes.filter(node=>node.data.entity.kind==="screen").length,2);
+  const complete = applicationLayout(map,"elements",true,true);
+  assert.deepEqual(new Set(complete.nodes.map(node => node.id)), new Set(map.nodes.map(node => node.id)));
+  assert.ok(complete.nodes.some(node => node.data.entity.kind === "operation"));
+  const before = JSON.stringify(complete);
+  const connections = applicationConnections(map, complete, filters.id);
+  assert.ok(connections.some(edge => edge.label === "Contains"));
+  assert.equal(JSON.stringify(complete), before, "Inspecting an entity must not hide or rearrange the complete graph");
+  for (const node of complete.nodes) {
+    if (node.parentId) {
+      const parent = complete.nodes.find(parent => parent.id === node.parentId)!;
+      assert.ok(node.position.y >= 80 && node.position.x >= 20);
+      assert.ok(node.position.x + node.width! <= parent.width! && node.position.y + node.height! <= parent.height!, "Children must fit inside their visible container");
+    }
+    for (const sibling of complete.nodes.filter(other => other.id !== node.id && other.parentId === node.parentId))
+      assert.ok(node.position.x + node.width! <= sibling.position.x || sibling.position.x + sibling.width! <= node.position.x || node.position.y + node.height! <= sibling.position.y || sibling.position.y + sibling.height! <= node.position.y, "Sibling entities must not overlap");
+  }
   assert.deepEqual(applicationMap("https://app.test",[{run,serviceMap:network}]),map);
 });
 

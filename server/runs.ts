@@ -2,9 +2,10 @@ import { decisionMaps } from "./decision-map.ts";
 import { buildServiceMap, emptyServiceMap } from "./service-map.ts";
 import { libraryEntry } from "./library.ts";
 import { readDiscoveries } from "./discoveries.ts";
+import { auditExploration, ExplorationActivity, reportTimeoutMs } from "./exploration.ts";
 import { applicationMap, readInterfaces } from "./application-map.ts";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, statSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Evidence, Run, RunInput, ServiceMap } from "../shared/model.ts";
 import { scopes } from "../shared/model.ts";
@@ -12,6 +13,7 @@ import { collectContext } from "./context.ts";
 import { Store, saveJSON } from "./store.ts";
 import { Accounts, binaryFor } from "./providers.ts";
 import { execute, clean } from "./process.ts";
+import { recoverReport, recoveryAI } from "./report-recovery.ts";
 import {
   agentPrompt,
   commandArgs,
@@ -37,7 +39,7 @@ export class Runs {
     const run = this.get(id);
     if (!run) return;
     if (!run.serviceMapEnabled) return emptyServiceMap(id, "disabled");
-    if (this.mapJobs.has(id) || run.status === "running") return emptyServiceMap(id, "pending");
+    if (this.mapJobs.has(id) || run.status === "running" && !run.reportRecovery) return emptyServiceMap(id, "pending");
     try {
       return JSON.parse(readFileSync(join(this.store.runDir(id), "service-map.json"), "utf8"));
     } catch { return emptyServiceMap(id, "unavailable"); }
@@ -119,7 +121,11 @@ export class Runs {
         origin: new URL(input.url).origin,
         headed: input.headed,
         maxCalls: scopes[input.scope].calls,
+        deadline: Date.now() + scopes[input.scope].minutes * 60000,
         serviceMapEnabled: input.serviceMapEnabled,
+        namesPath: join(this.store.root, "scenario-names.json"),
+        knownScenarios: this.store.runs().filter(previous=>previous.id!==run.id&&new URL(previous.url).origin===new URL(input.url).origin)
+          .flatMap(previous=>libraryEntry(this.store,this.get(previous.id)??previous).scenarios.map(scenario=>({key:scenario.nameKey,title:scenario.title,gherkin:scenario.gherkin}))),
       });
       const prior = this.maps(new URL(input.url).origin)[0]?.branches.slice(0, 50).map(b => ({
         screen:b.source.label, condition:b.condition, action:b.action, outcome:b.outcome.slice(0, 400), destination:b.target.label,
@@ -128,7 +134,7 @@ export class Runs {
         new URL(previous.url).origin === new URL(input.url).origin);
       const known = history.flatMap(previous =>
         libraryEntry(this.store, this.get(previous.id) ?? previous).scenarios
-          .filter(scenario => scenario.state === "Documented" || scenario.state === "Observed rule")
+          .filter(scenario => scenario.state === "Documented" || scenario.state === "Observed rule" || scenario.state.startsWith("Refined"))
           .map(scenario => ({ screen: scenario.group, scenario: scenario.gherkin.slice(0, 2200) })));
       const uniqueKnown = [...new Map(known.map(scenario => [scenario.scenario, scenario])).values()].slice(0, 50);
       const gaps = [...new Set(history.flatMap(previous => previous.report?.gaps ?? []))].slice(0, 25);
@@ -163,6 +169,55 @@ export class Runs {
         }
       });
   }
+  async resumeReport(id: string) {
+    if (this.active || this.starting) throw Error("An exploration is already running. Wait for it to finish.");
+    this.starting = true;
+    try {
+      const run = this.get(id);
+      if (!run || run.status === "running" || run.report) throw Error("Choose an incomplete characterization with saved rules.");
+      if (!run.discoveries?.length) throw Error("No observed rules were saved for this characterization.");
+      if (!(await this.accounts.status(run.provider)).connected) throw Error("Connect the exploration's AI account before completing its report.");
+      const dir = this.store.runDir(id);
+      if (!existsSync(join(dir, "before-report-recovery.json"))) saveJSON(join(dir, "before-report-recovery.json"), run);
+      const abort = new AbortController();
+      run.status = "running";
+      run.phase = "Completing the saved report";
+      run.reportRecovery = { startedAt: new Date().toISOString(), completedRules: 0, totalRules: run.discoveries.length };
+      delete run.error; delete run.finishedAt;
+      this.active = { run, abort }; this.store.saveRun(run);
+      void this.executeReportRecovery(run, abort);
+      return run;
+    } finally { this.starting = false; }
+  }
+  private async executeReportRecovery(run: Run, abort: AbortController) {
+    try {
+      const report = await recoverReport(this.store, run, abort.signal, recoveryAI(this.accounts), (done, total) => {
+        run.reportRecovery!.completedRules = done; run.reportRecovery!.totalRules = total;
+        run.phase = `Completing saved tests · ${done}/${total} rules`;
+        this.store.saveRun(run);
+      });
+      if (abort.signal.aborted) throw Error("Cancelled");
+      this.publishReport(run, report);
+    } catch (error) {
+      run.status = abort.signal.aborted ? "cancelled" : "failed";
+      run.phase = "Report recovery incomplete";
+      run.error = "Saved evidence and completed test batches are preserved. " + clean((error as Error).message);
+    } finally {
+      run.finishedAt = new Date().toISOString(); this.store.saveRun(run);
+      if (this.active?.run.id === run.id) this.active = undefined;
+      libraryEntry(this.store, run);
+    }
+  }
+  private publishReport(run: Run, report: import("../shared/model.ts").Report) {
+    verifyEvidence(report, run.evidence);
+    if (!report.flows.length) throw Error(report.gaps.join("\n") || "No reproducible tests could be generated from the recorded evidence.");
+    const dir = this.store.runDir(run.id);
+    saveJSON(join(dir, "response.json"), report); saveJSON(join(dir, "report.json"), report);
+    report.flows.forEach((flow, index) => writeFileSync(join(dir, `flow-${index + 1}.spec.ts`), flow.testCode, { mode: 0o600 }));
+    run.report = report;
+    run.status = "completed";
+    run.phase = report.gaps.length ? "Characterization complete with coverage gaps" : "Characterization complete";
+  }
   get(id: string) {
     const run =
       this.active?.run.id === id ? this.active.run : this.store.run(id);
@@ -174,6 +229,8 @@ export class Runs {
   }
   private async executeRun(run: Run, prompt: string, abort: AbortController) {
     const dir = this.store.runDir(run.id);
+    const explorationDeadline = Date.now() + scopes[run.scope].minutes * 60000;
+    const activity = new ExplorationActivity(dir, explorationDeadline);
     try {
       const command = commandArgs(run, dir, prompt);
       run.phase = "Exploring with Playwright";
@@ -183,20 +240,29 @@ export class Runs {
         env: this.accounts.environment(run.provider),
         input: command.stdin,
         signal: abort.signal,
-        timeout: scopes[run.scope].minutes * 60000,
+        timeout: scopes[run.scope].minutes * 60000 + reportTimeoutMs,
         idleTimeout: 180000,
+        idleTimeoutFor: () => activity.idleTimeout(),
+        deadlineAt: () => activity.deadline(),
         activityAt: () => {
-          return Math.max(...["evidence.jsonl", "discoveries.jsonl"].map(file => {
+          const phase = activity.update() ? "Writing scenarios and tests" : "Exploring with Playwright";
+          if (run.phase !== phase) {
+            run.phase = phase;
+            this.store.saveRun(run);
+          }
+          return Math.max(...["evidence.jsonl", "discoveries.jsonl", "exploration-progress.json"].map(file => {
             try { return statSync(join(dir, file)).mtimeMs; } catch { return 0; }
           }));
         },
-        onOutput: (value) => {
+        onOutput: (value, kind) => {
+          appendFileSync(join(dir, kind === "out" ? "provider-output.txt" : "provider-error.txt"), value, { mode: 0o600 });
           // Keep only a bounded diagnostic tail. MCP evidence is the progress source.
           run.logs.push(value.slice(-4000));
           run.lastProviderActivityAt = new Date().toISOString();
           if (run.logs.length > 30) run.logs.shift();
         },
       });
+      writeFileSync(join(dir, "provider-output.txt"), clean(result.stdout), { mode: 0o600 });
       if (abort.signal.aborted) throw new Error("Cancelled");
       if (result.code !== 0)
         throw new Error(
@@ -208,6 +274,7 @@ export class Runs {
           ? readFileSync(join(dir, "response.json"), "utf8")
           : result.stdout;
       const report = parseReport(response, run.provider);
+      auditExploration(dir, report);
       saveJSON(join(dir, "response.json"), report);
       run.evidence = this.evidence(run.id);
       verifyEvidence(report, run.evidence);
@@ -224,7 +291,7 @@ export class Runs {
         }),
       );
       run.status = "completed";
-      run.phase = "Characterization complete";
+      run.phase = report.gaps.length ? "Characterization complete with coverage gaps" : "Characterization complete";
     } catch (error) {
       run.status = abort.signal.aborted ? "cancelled" : "failed";
       run.phase =
@@ -232,6 +299,8 @@ export class Runs {
           ? "Exploration cancelled"
           : "Exploration incomplete";
       run.error = clean((error as Error).message);
+      if (!abort.signal.aborted && activity.deadline() !== undefined)
+        run.error = "The browser exploration finished, but the final report could not be completed. Saved rules and evidence remain available. " + run.error;
     } finally {
       run.finishedAt = new Date().toISOString();
       run.evidence = this.evidence(run.id);

@@ -33,9 +33,11 @@ export function execute(
     input?: string;
     timeout?: number;
     idleTimeout?: number;
+    idleTimeoutFor?: () => number;
+    deadlineAt?: () => number | undefined;
     activityAt?: () => number;
     signal?: AbortSignal;
-    onOutput?: (text: string) => void;
+    onOutput?: (text: string, kind: "out" | "err") => void;
     env?: NodeJS.ProcessEnv;
   } = {},
 ) {
@@ -56,6 +58,7 @@ export function execute(
         overflow = false;
       let lastActivity = Date.now();
       let idleTimedOut = false;
+      let idleLimit = options.idleTimeout;
       const abort = () => terminate(child);
       options.signal?.addEventListener("abort", abort, { once: true });
       const timer = setTimeout(() => {
@@ -64,7 +67,15 @@ export function execute(
       }, options.timeout ?? 15000);
       const idleTimer = options.idleTimeout ? setInterval(() => {
         lastActivity = Math.max(lastActivity, options.activityAt?.() ?? 0);
-        if (Date.now() - lastActivity < options.idleTimeout!) return;
+        const deadline = options.deadlineAt?.();
+        if (deadline && Date.now() >= deadline) {
+          timedOut = true;
+          clearInterval(idleTimer);
+          terminate(child);
+          return;
+        }
+        idleLimit = options.idleTimeoutFor?.() ?? options.idleTimeout;
+        if (Date.now() - lastActivity < idleLimit!) return;
         idleTimedOut = true;
         clearInterval(idleTimer);
         terminate(child);
@@ -79,7 +90,7 @@ export function execute(
         }
         if (kind === "out") stdout += value;
         else stderr += value;
-        options.onOutput?.(clean(value));
+        options.onOutput?.(clean(value), kind);
       };
       child.stdout.on("data", (data) => output("out", data));
       child.stderr.on("data", (data) => output("err", data));
@@ -97,7 +108,7 @@ export function execute(
       child.on("close", (code) => {
         cleanup();
         if (options.signal?.aborted) reject(new Error("Cancelled"));
-        else if (idleTimedOut) reject(new Error("Exploration stopped after " + Math.ceil(options.idleTimeout! / 1000) + " seconds without provider or browser activity. Recorded evidence has been preserved."));
+        else if (idleTimedOut) reject(new Error("Exploration stopped after " + Math.ceil(idleLimit! / 1000) + " seconds without provider or browser activity. Recorded evidence has been preserved."));
         else if (timedOut)
           reject(new Error("Execution timed out."));
         else if (overflow)

@@ -19,6 +19,8 @@ import { chromium } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { discoverySchema } from "../shared/discovery.ts";
+import { validateScenario, renderScenario } from "../shared/scenario.ts";
+import { assertScenarioNames, readScenarioNames, renameGherkin, renameScenariosSchema, saveScenarioNames, scenarioNameKey, scenarioTitleSchema } from "./scenario-names.ts";
 import { ExplorationInventory } from "./snapshot.ts";
 
 const require = createRequire(import.meta.url);
@@ -74,6 +76,30 @@ let externalUrl;
 const inventory = new ExplorationInventory();
 const discoveries = new Map();
 let discoveryWrites = 0;
+const namesPath = config.namesPath ?? join(config.outputDir, "scenario-names.json");
+const namedScenarios = new Map((config.knownScenarios ?? []).map(scenario => [scenario.key, scenario]));
+function nameCatalog() {
+  const names = readScenarioNames(namesPath);
+  return [...namedScenarios.values()].map(scenario => ({ ...scenario, title: names[scenario.key]?.title ?? scenario.title }));
+}
+let completion;
+const finishSchema = z.object({
+  reason: z.enum(["budget_exhausted", "alternatives_exhausted", "blocked"]),
+  detail: z.string().min(10).max(2000),
+  remaining: z.array(z.object({ route: z.string().min(1).max(1000), reason: z.string().min(10).max(1000) })).max(100),
+});
+function progress() {
+  return { usedCalls: Math.min(count, config.maxCalls), maxCalls: config.maxCalls,
+    remainingCalls: Math.max(0, config.maxCalls - count),
+    ...(config.deadline ? { deadline: config.deadline } : {}),
+    screens: inventory.plan().map(screen => ({ ...screen, pendingCount: screen.pending.length, pending: screen.pending.slice(0, 20) })),
+    completion };
+}
+function saveProgress() {
+  const path = join(config.outputDir, "exploration-progress.json");
+  writeFileSync(path + ".tmp", JSON.stringify(progress()), { mode: 0o600 });
+  renameSync(path + ".tmp", path);
+}
 const readEvidence = () => {
   if (!existsSync(config.evidencePath)) return [];
   return readFileSync(config.evidencePath, "utf8").split("\n").flatMap(line => {
@@ -85,21 +111,55 @@ const extraTools = [
     inputSchema: z.toJSONSchema(discoverySchema) },
   { name: "get_discovery_plan", description: "List observed screens, untried controls, exercised paths and recorded capabilities. Use it to backtrack and select an alternative branch.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "finish_exploration", description: "Review the frontier before writing the final report. Continue relevant pending branches. To finish early, explain each screen with remaining controls (blocked, equivalent samples or outside the requested scope). Never claim budget exhaustion before reaching it.",
+    inputSchema: z.toJSONSchema(finishSchema) },
+  { name: "get_scenario_names", description: "Review existing scenario titles and their behavior before writing a new scenario. Short titles must distinguish the action, outcome or relevant condition. capabilityKey groups related cases; capability names one specific case.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "rename_scenarios", description: "Rename existing scenarios when a new related case makes their old names too broad. Change only concise titles; behavior, evidence, identifiers and tests are retained. Rename all conflicting cases together using their catalog keys.",
+    inputSchema: z.toJSONSchema(renameScenariosSchema) },
 ];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [...listed.tools.filter((tool) => allowed.has(tool.name)), ...extraTools],
 }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name === "get_scenario_names")
+    return { content: [{ type: "text", text: JSON.stringify(nameCatalog().map(scenario => ({ key: scenario.key, title: scenario.title, behavior: scenario.gherkin.split("\n").slice(1, 6).join("\n") }))) }] };
+  if (request.params.name === "rename_scenarios") {
+    try {
+      const { changes } = renameScenariosSchema.parse(request.params.arguments);
+      saveScenarioNames(namesPath, nameCatalog(), changes);
+      return { content: [{ type: "text", text: JSON.stringify({ renamed: changes, note: "Titles updated. Keep these names consistent in the final report." }) }] };
+    } catch (error) { return { isError: true, content: [{ type: "text", text: error.message }] }; }
+  }
   if (request.params.name === "get_discovery_plan")
     return { content: [{ type: "text", text: JSON.stringify({
+      usedCalls: Math.min(count, config.maxCalls), remainingCalls: Math.max(0, config.maxCalls - count), maxCalls: config.maxCalls,
       screens: inventory.plan().map(screen=>({...screen,pendingCount:screen.pending.length,pending:screen.pending.slice(0,screen.current?20:8)})),
       recordedRuleCount: discoveries.size,
-      recentRules: [...discoveries.values()].slice(-30).map(d => ({ capability: d.capability, given: d.given, observed: d.observed.slice(0,300) })),
+      recentRules: [...discoveries.values()].slice(-30).map(d => {
+        const key = scenarioNameKey(config.origin, renderScenario({ title: d.capability, given: [d.given], when: [d.action], then: [d.observed], parameters: d.parameters ?? null }));
+        return { key, capability: readScenarioNames(namesPath)[key]?.title ?? d.capability, given: d.given, action: d.action, observed: d.observed.slice(0,300) };
+      }),
     }) }] };
+  if (request.params.name === "finish_exploration") {
+    try {
+      const requested = finishSchema.parse(request.params.arguments);
+      if (requested.reason === "budget_exhausted" && count < config.maxCalls && (!config.deadline || Date.now() < config.deadline))
+        throw Error(`${config.maxCalls - count} browser calls remain. Explore pending branches or justify early completion.`);
+      const pending = inventory.plan().filter(screen => screen.pending.length);
+      if (requested.reason !== "budget_exhausted" && pending.some(screen => !requested.remaining.some(item => item.route === screen.route)))
+        throw Error("Unreviewed controls remain. Call get_discovery_plan, explore relevant alternatives and justify each remaining screen in remaining.");
+      completion = requested;
+      saveProgress();
+      return { content: [{ type: "text", text: "Exploration closure recorded. Include all remaining limitations in report.gaps and produce the final JSON." }] };
+    } catch (error) { return { isError: true, content: [{ type: "text", text: error.message }] }; }
+  }
   if (request.params.name === "record_discovery") {
     try {
       if (discoveryWrites >= 320) throw Error("Discovery recording budget exhausted. Finish the report.");
       const discovery = discoverySchema.parse(request.params.arguments);
+      scenarioTitleSchema.parse(discovery.capability);
+      validateScenario({ title: discovery.capability, given: [discovery.given], when: [discovery.action], then: [discovery.observed], parameters: discovery.parameters ?? null });
       const successful = new Map(readEvidence().filter(e => e.ok).map(e => [e.id, e]));
       if (discovery.evidenceIds.some(id => !successful.has(id)) ||
           !pageUrlFromResult(successful.get(discovery.screenEvidenceId)?.detail ?? ""))
@@ -107,7 +167,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const id = createHash("sha256").update(JSON.stringify([discovery.capabilityKey, discovery.scope, discovery.given, discovery.action, discovery.observed])).digest("hex").slice(0, 24);
       if (!discoveries.has(id) && discoveries.size >= 160) throw Error("Discovery limit reached. Finish the report.");
       const previous = discoveries.get(id);
-      const saved = { ...discovery, id, at: new Date().toISOString(),
+      const gherkin = renderScenario({ title: discovery.capability, given: [discovery.given], when: [discovery.action], then: [discovery.observed], parameters: discovery.parameters ?? null });
+      const key = scenarioNameKey(config.origin, gherkin);
+      const catalog = nameCatalog();
+      const title = readScenarioNames(namesPath)[key]?.title ?? catalog.find(scenario => scenario.key === key)?.title ?? discovery.capability;
+      const candidate = { key, title, gherkin: renameGherkin(gherkin, title) };
+      assertScenarioNames([...catalog.filter(scenario => scenario.key !== key), candidate], new Set([key]));
+      const saved = { ...discovery, capability: previous?.capability ?? discovery.capability, id, at: new Date().toISOString(),
         evidenceIds: [...new Set([...(previous?.evidenceIds ?? []), ...discovery.evidenceIds])].slice(0,30),
         screenEvidenceIds: [...new Set([...(previous?.screenEvidenceIds ?? []), discovery.screenEvidenceId])],
         examples: [...new Map([...(previous?.examples ?? []), ...discovery.examples].map(example => [JSON.stringify(example), example])).values()].slice(0,12),
@@ -115,16 +181,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       appendFileSync(join(config.outputDir, "discoveries.jsonl"), JSON.stringify(saved) + "\n", { mode: 0o600 });
       discoveryWrites++;
       discoveries.set(id, saved);
-      return { content: [{ type: "text", text: "Discovery saved. " + discoveries.size + " distinct rules recorded. Backtrack to pending alternatives with get_discovery_plan." }] };
+      namedScenarios.set(key, candidate);
+      saveScenarioNames(namesPath, nameCatalog(), [{ key, title }]);
+      return { content: [{ type: "text", text: "Discovery saved as “" + title + "”. " + discoveries.size + " distinct rules recorded. Review related titles with get_scenario_names; rename older generic titles with rename_scenarios. Backtrack to pending alternatives with get_discovery_plan." }] };
     } catch (error) {
       return { isError: true, content: [{ type: "text", text: error.message }] };
     }
   }
   const id = ++count;
+  completion = undefined;
   const tool = request.params.name;
   let startedAt;
   try {
     if (!allowed.has(tool)) throw new Error("Tool outside the exploration scope.");
+    if (config.deadline && Date.now() >= config.deadline)
+      throw new Error("Exploration time budget exhausted. Call finish_exploration and write the report from saved observations.");
     if (count > config.maxCalls)
       throw new Error(
         "Exploration budget exhausted. Finish the report using recorded observations.",
@@ -194,13 +265,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       JSON.stringify(event) + "\n",
       { mode: 0o600 },
     );
+    saveProgress();
     return {
       ...result,
       content: [
         ...content,
         {
           type: "text",
-          text: `CHARACTERIZATION_EVIDENCE_ID=${id}. Cite this ID only for behavior observed in this response.${externalUrls.length ? ` EXTERNAL REDIRECT: ${externalUrls.join(", ")}. Document the triggering action and each destination as a flow with a URL assertion. Return to the original tab or go back before continuing.` : ""}
+          text: `CHARACTERIZATION_EVIDENCE_ID=${id}. BROWSER_BUDGET used=${Math.min(count, config.maxCalls)} remaining=${Math.max(0, config.maxCalls - count)} maximum=${config.maxCalls}. Cite this ID only for behavior observed in this response.${externalUrls.length ? ` EXTERNAL REDIRECT: ${externalUrls.join(", ")}. Document the triggering action and each destination as a flow with a URL assertion. Return to the original tab or go back before continuing.` : ""}
 DISCOVERY_FRONTIER ${JSON.stringify(inventory.plan().map(screen => ({ screen: screen.screen, current: screen.current, pending: screen.pending.length, exercised: screen.exercised, alternatives: screen.pending.slice(0, screen.current ? 6 : 0) })))}. Save each new rule with record_discovery before continuing. Backtrack to pending alternatives.`,
         },
       ],
@@ -220,6 +292,7 @@ DISCOVERY_FRONTIER ${JSON.stringify(inventory.plan().map(screen => ({ screen: sc
       }) + "\n",
       { mode: 0o600 },
     );
+    saveProgress();
     return { isError: true, content: [{ type: "text", text: error.message }] };
   }
 });

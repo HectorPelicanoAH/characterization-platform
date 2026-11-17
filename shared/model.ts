@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RecordedDiscovery } from "./discovery.ts";
+import { parametersSchema } from "./scenario.ts";
 
 export const providers = ["codex", "claude", "copilot"] as const;
 export type Provider = (typeof providers)[number];
@@ -67,6 +68,7 @@ export const runInputSchema = z.object({
   prioritizeNewPaths: z.boolean().default(true),
 });
 export type RunInput = z.infer<typeof runInputSchema>;
+export const characterizationSchema = runInputSchema.extend({ url: z.string().max(2048).default("") });
 export const reportSchema = z.object({
   summary: z.string().min(1).max(12000),
   flows: z
@@ -78,6 +80,7 @@ export const reportSchema = z.object({
         observed: z.string().min(1).max(8000),
         evidenceIds: z.array(z.number().int().positive()).min(1).max(100),
         testCode: z.string().min(1).max(40000),
+        parameters: parametersSchema.nullable().optional(),
       }),
     )
     .max(160),
@@ -132,6 +135,7 @@ export type Run = RunInput & {
   serviceMapState?: ServiceMapState;
   lastProviderActivityAt?: string;
   discoveries?: RecordedDiscovery[];
+  reportRecovery?: { startedAt: string; completedRules: number; totalRules: number };
 };
 
 export type ServiceMapState = "disabled" | "pending" | "ready" | "partial" | "unavailable";

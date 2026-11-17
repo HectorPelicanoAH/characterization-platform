@@ -185,19 +185,30 @@ function App() {
   }
   useEffect(() => {
     void attempt("load", async () => {
-      const [saved, accountList, previous] = await Promise.all([
+      const [saved, accountList, previous, draft] = await Promise.all([
         api<Settings>("/settings"),
         api<Account[]>("/accounts"),
         api<(Run & { flowCount: number; removedFromRecent?:boolean })[]>("/runs"),
+        api<RunInput>("/characterization"),
       ]);
       setSettings(saved);
       setAccounts(accountList);
       setHistory(previous.filter(r=>!r.removedFromRecent));
-      const latest = previous[0];
-      setInput(old => ({ ...old, url: latest?.url ?? "", prompt: latest?.prompt ?? "" }));
+      setInput(draft);
       setLoaded(true);
     });
   }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    const timer = window.setTimeout(() => {
+      void api("/characterization", input, "PUT").catch(error => setError("Could not save characterization settings: " + error.message));
+    }, 300);
+    const saveBeforeLeaving = () => {
+      void fetch("/api/characterization", { method: "PUT", headers: { "X-Characterize": "1", "Content-Type": "application/json" }, body: JSON.stringify(input), keepalive: true });
+    };
+    window.addEventListener("pagehide", saveBeforeLeaving);
+    return () => { window.clearTimeout(timer); window.removeEventListener("pagehide", saveBeforeLeaving); };
+  }, [input, loaded]);
   const loggingIn = accounts.some((a) => a.login?.status === "running");
   useEffect(() => {
     setInput(old => {
@@ -364,7 +375,7 @@ function App() {
               : "No account connected"}
           </span>
         </header>
-        <main className={page === "map" ? "map-main" : undefined}>
+        <main className={page === "map" ? "map-main" : page === "library" ? "library-main" : undefined}>
           {error && (
             <div role="alert" className="alert error">
               <span>{error}</span>
@@ -729,12 +740,12 @@ function App() {
                   <small>{run.model || "Default model"}</small>
                 </div>
                 <div>
-                  <span>OBSERVED ACTIONS</span>
+                  <span>BROWSER CALLS USED</span>
                   <strong>
-                    {run.evidence.filter((e) => e.ok).length}
+                    {Math.min(run.evidence.length, scopes[run.scope].calls)}
                     <small> / {scopes[run.scope].calls}</small>
                   </strong>
-                  <small>Recorded by Playwright</small>
+                  <small>Includes snapshots and failed attempts</small>
                 </div>
                 <div>
                   <span>BEHAVIOR RULES</span>
@@ -758,14 +769,18 @@ function App() {
                     </h2>
                     <p>
                       {working
-                        ? "The agent is exploring the site and recording its behavior."
+                        ? run.reportRecovery ? "Generating the final tests and report from the saved browser observations." : "The agent is exploring the site and recording its behavior."
                         : run.report?.summary ||
                           "Review the evidence and diagnostics for this exploration."}
                     </p>
                     {working && <p className="small muted" role="status">
                       Last browser action {run.evidence.length ? readableDate(run.evidence[run.evidence.length - 1].at) : "pending"}.
                       {" "}Last provider activity {readableDate(run.lastProviderActivityAt ?? run.createdAt)}.
-                      {" "}The exploration stops after 3 minutes without provider or browser activity.
+                      {" "}{run.reportRecovery
+                        ? `Completing the report from saved evidence: ${run.reportRecovery.completedRules}/${run.reportRecovery.totalRules} rules processed. Each completed batch is saved.`
+                        : run.phase === "Writing scenarios and tests"
+                        ? "Preparing the final report can take up to 10 minutes. Your rules and evidence are already saved."
+                        : "The exploration stops after 3 minutes without activity. Final report preparation has a separate time limit."}
                     </p>}
                   </div>
                   {working ? (
@@ -787,6 +802,14 @@ function App() {
                       disabled={Boolean(busy)}
                     >
                       <ArrowDownToLine size={16} /> Download suite
+                    </button>
+                  ) : run.discoveries?.length ? (
+                    <button className="button primary" disabled={Boolean(busy) || !accounts.some(account => account.id === run.provider && account.connected)}
+                      onClick={() => void attempt("resume-report", async () => {
+                        setRun(await api<Run>(`/runs/${run.id}/resume`, {}));
+                        await refreshHistory();
+                      })}>
+                      <Play size={15} /> Complete saved report
                     </button>
                   ) : null}
                 </div>

@@ -8,7 +8,10 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Run, Settings } from "../shared/model.ts";
-import { settingsSchema } from "../shared/model.ts";
+import { characterizationSchema, settingsSchema } from "../shared/model.ts";
+import type { ScenarioText } from "../shared/scenario.ts";
+
+export type ScenarioRefinement = { text: ScenarioText; comment: string; at: string };
 
 export function saveJSON(path: string, value: unknown) {
   writeFileSync(path + ".tmp", JSON.stringify(value, null, 2), { mode: 0o600 });
@@ -36,6 +39,17 @@ export class Store {
   saveSettings(settings: Settings) {
     saveJSON(join(this.root, "settings.json"), settings);
   }
+  characterization() {
+    const path = join(this.root, "characterization.json");
+    return characterizationSchema.parse(existsSync(path)
+      ? JSON.parse(readFileSync(path, "utf8"))
+      : this.runs()[0] ?? { provider: "codex" });
+  }
+  saveCharacterization(input: unknown) {
+    const value = characterizationSchema.parse(input);
+    saveJSON(join(this.root, "characterization.json"), value);
+    return value;
+  }
   runDir(id: string) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid identifier");
     return join(this.root, "runs", id);
@@ -49,6 +63,13 @@ export class Store {
     if (scenario) state.scenarios=[...new Set([...state.scenarios,scenario])];
     else state.recent=true;
     saveJSON(join(this.runDir(id),"exclusions.json"),state);
+  }
+  refinements(): Record<string, ScenarioRefinement> {
+    const file = join(this.root, "library-refinements.json");
+    return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  }
+  saveRefinements(value: Record<string, ScenarioRefinement>) {
+    saveJSON(join(this.root, "library-refinements.json"), value);
   }
   saveRun(run: Run) {
     mkdirSync(this.runDir(run.id), { recursive: true, mode: 0o700 });
