@@ -2,9 +2,11 @@
 
 **Document application behavior from browser journeys.** Give Characterize a starting URL and a flow to explore. An AI agent drives Chromium through Playwright MCP, records business rules as it discovers them, and writes tests for the behavior it observes.
 
-[Quick start](#quick-start) · [First exploration](#your-first-exploration) · [Coverage](#coverage) · [Local data](#local-data)
+[Quick start](#quick-start) · [Local library](#local-library) · [Application map](#application-map) · [Recovery](#exploration-and-recovery) · [Coverage](#coverage)
 
-![Characterize in dark mode showing the exploration form and its four coverage levels](docs/workspace-dark.png)
+![Characterize's charcoal dark mode: application and screen folders, parameterized Gherkin, evidence links and Refine with AI](docs/workspace-dark.png)
+
+*Local library with demo data.*
 
 ## Quick start
 
@@ -23,16 +25,35 @@ Open [the local workspace](http://127.0.0.1:4320). Connect **one Codex, Claude o
 1. **Pick a site.** For a first run, start `npm run demo` in another terminal and enter [the local demo URL](http://127.0.0.1:4321) in Characterization.
 2. **Give the agent a task.** Try “Open the catalog, apply a filter and describe how the product list changes.” Choose a coverage level, model and reasoning effort. Optional context can include written instructions and local directories containing skills or guardrails.
 3. **Watch the journey.** Follow the actions as they arrive. The agent may follow redirects within the same registrable domain, including subdomains. When a flow leads to another domain, it records the destination and returns to the original site.
-4. **Review the evidence.** Open **Local library** and expand application and screen folders on the left. Select a folder to browse its tests, or a scenario to open its Gherkin, observations and actions on the right. Search across the library or download the current selection. **Smoke** groups journeys spanning several screens. An interrupted exploration can still yield draft scenarios from recorded page observations. Open its diagnostics for failed actions and the local Playwright Trace Viewer when a trace is available.
+4. **Review the evidence.** Open **Local library** to browse scenarios and their observations, or **Application map** to explore screens, components and services. Open a recording's diagnostics for failed actions and its local Playwright Trace Viewer when a trace is available.
 5. **Run the tests.** Download the suite ZIP from a completed exploration and review its TypeScript assertions. In the extracted directory, run `npm install`, `npx playwright install chromium` and `npm test` to verify the generated suite.
 
-Use **Refine with AI** beside a scenario's evidence and delete actions to describe an improvement. The exploration's AI provider reviews related scenarios from the same site, asks for missing details and proposes replacements. Review the original and proposed Gherkin, select any related scenarios to include, then save. Grouped observations are updated together and the original reports and evidence remain available. Refinement updates the library and `.feature` downloads; review generated Playwright tests separately. Business clauses use English, with `Scenario Outline` and observed `Examples` for values that drive a rule.
+## Local library
 
-Scenario names identify the action, result or distinguishing condition, for example **Increase bag quantity and recalculate totals** and **Decrease bag quantity and recalculate totals**. Before recording a rule, the agent compares names already used for the site. Different behaviors cannot share a title; it can rename an existing broad title and the new scenario together. Title changes preserve scenario identifiers, evidence and deletion choices, and appear in the library, Gherkin and exported report.
+Browse application and screen folders on the left; select a folder or scenario to see its Gherkin, evidence and actions on the right. Search by application, screen, scenario name or step text. **Download .feature** exports the current selection. **Smoke** groups journeys spanning several screens. Repeated observations of the same behavior appear together, with links to their individual recordings.
 
-Open **Application map** to see the whole application, including components, elements, business rules, services and operations. The **Screen** selector starts at **All screens**; choose a screen to narrow the map, or change **Detail** for a simpler overview. Clicking an entity shows its details without hiding neighbors, rearranging the graph or changing the zoom. Pan, zoom and use the minimap to navigate; **Fit map** restores the complete view. Double-click a screen or use **Focus** to inspect its contents. Existing runs contribute their recorded snapshots and reports.
+Scenario titles and business clauses use English. Names identify the action, result or distinguishing condition: **Increase bag quantity and recalculate totals** and **Decrease bag quantity and recalculate totals** describe different behaviors. Before recording a rule, the agent compares names already used for the site and can rename an older broad title. Title changes preserve scenario identifiers, evidence and deletion choices, and appear in the library, Gherkin and exported report.
 
-Enable **Generate service map** before exploring to capture browser destinations and their operations. **Services** and **Rules** are visible by default in the map and can be toggled independently. Searching for a service or operation opens that detail automatically. Select an operation to inspect captured results, durations and available action evidence. Partial captures show their limits. Gateways appear as observed destinations, and unknown route segments are grouped for privacy.
+Data that drives a rule uses `<snake_case>` parameters in a **Scenario Outline**, with observed values in **Examples**. Incidental product names, localized button labels and page copy stay in the evidence or test locators. Observed samples do not establish untested cases.
+
+### Refine with AI
+
+Use **Refine with AI** beside a scenario's evidence and delete actions to describe an improvement. The exploration's AI provider reviews related scenarios from the same site, asks for missing details and proposes replacements. Compare the original and proposed Gherkin, choose which related scenarios to include, then save. Related changes require your selection; grouped observations are updated together.
+
+Refinement updates the library and `.feature` downloads while retaining the original reports and evidence. **Generated Playwright tests need a separate review after a refinement.** Refining wording does not run the target application again.
+
+## Application map
+
+The map opens with **All screens**, **All entities**, **Rules** and **Services** enabled. It includes recorded screens, contained and shared components, interactive elements, business rules, services and operations. Its charcoal dark mode uses a lavender accent; light mode is also available.
+
+- **Screen** narrows the map to a selected screen and its related entities. Choose **All screens** to return to the application view.
+- **Detail** switches between screens, components and all entities. Rules and services can be toggled independently.
+- **Select a node or connection** to inspect its details and evidence. Selection preserves the other entities, their positions and the current zoom.
+- **Pan, zoom or use the minimap** to navigate. **Fit map** fits the current view; double-click a screen or use **Focus** to inspect its contents.
+
+Enable **Generate service map** before exploring to capture browser destinations and operations. Select an operation to inspect captured results, durations and available action evidence. Partial captures show their limits. Gateways appear as observed destinations, and unknown route segments are grouped for privacy.
+
+## Exploration and recovery
 
 **Prioritize unexplored paths** uses documented scenarios, historical gaps and untried controls to guide the next exploration. The agent keeps decision points, backtracks to try sibling paths and saves each observed condition/action/outcome with `record_discovery`. Product, market, currency and other sample values belong to examples. Market-dependent rules retain their observed scope. Disable the option to recheck known flows.
 
@@ -56,6 +77,8 @@ See [Gherkin quality and exploration findings](docs/characterization-quality.md)
 ## Local data
 
 The server listens on loopback. Settings, run history, evidence, traces and Gherkin files live under `.data/`, which Git ignores. A fresh clone starts with an empty library. The theme follows your system on first visit, and the appearance button saves your choice in the browser.
+
+**Remove from recent** hides a recording from recent history while keeping its scenarios and evidence. **Delete scenario** removes the scenario and its grouped observations from the library and Gherkin files; the original reports and evidence remain available.
 
 The Characterization form saves its URL, instructions and agent options independently in `.data/characterization.json`, so clearing recordings does not reset the form or Settings.
 
