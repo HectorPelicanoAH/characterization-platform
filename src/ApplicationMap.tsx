@@ -174,11 +174,11 @@ export function ApplicationMap({ initialSite, onEvidence, onExplore }: {
         {screens.map(screen => <option key={screen.id} value={screen.id}>{screen.label}{screens.filter(other => other.label === screen.label).length > 1 ? " · " + (screen.route ?? screen.id.slice(-6)) : ""}</option>)}
       </select><ChevronDown size={16} aria-hidden="true" /></span></label>
       <label className="map-select-field">Detail<span className="map-select-control"><select aria-label="Map detail" value={detail} disabled={!sites.length} onChange={e => setDetail(e.target.value)}>
-        <option value="screens">Screens</option><option value="components">Components</option><option value="elements">All entities</option>
+        <option value="screens">Screens</option><option value="components">Components</option><option value="elements">All entities</option><option value="services">Services only</option>
       </select><ChevronDown size={16} aria-hidden="true" /></span></label>
       <div className="map-toggle-group">
-        <label className="map-toggle"><input type="checkbox" disabled={!sites.length} checked={showRules} onChange={e => setShowRules(e.target.checked)} />Rules</label>
-        <label className="map-toggle"><input type="checkbox" disabled={!sites.length} checked={showServices} onChange={e => setShowServices(e.target.checked)} />Services</label>
+        <label className="map-toggle"><input type="checkbox" disabled={!sites.length || detail === "services"} checked={showRules} onChange={e => setShowRules(e.target.checked)} />Rules</label>
+        <label className="map-toggle"><input type="checkbox" disabled={!sites.length || detail === "services"} checked={showServices} onChange={e => setShowServices(e.target.checked)} />Services</label>
       </div>
       <button className="button secondary" type="button" disabled={!nodes.length} onClick={() => fitCanvas(instance, nodes, canvas.current)}><Focus size={16} />Fit map</button>
     </div>

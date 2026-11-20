@@ -112,6 +112,14 @@ test("overview includes the whole map and selection preserves its layout and zoo
   await expect(page.locator(".react-flow__node")).toHaveCount(8);
   await page.getByRole("checkbox", { name: "Services", exact: true }).check();
   await expect(page.locator(".react-flow__node")).toHaveCount(10);
+  await page.getByLabel("Map detail").selectOption("services");
+  await expect(page.locator(".react-flow__node")).toHaveCount(2);
+  await expect(page.locator('.react-flow__node[data-id="api"]')).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id="Cart"]')).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Services", exact: true })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "Rules", exact: true })).toBeDisabled();
+  await page.getByLabel("Map detail").selectOption("elements");
+  await expect(page.locator(".react-flow__node")).toHaveCount(10);
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await page.getByRole("button", { name: "Fit map", exact: true }).click();

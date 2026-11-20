@@ -91,6 +91,16 @@ test("application graph promotes shared boundaries and links navigation, rules a
   const complete = applicationLayout(map,"elements",true,true);
   assert.deepEqual(new Set(complete.nodes.map(node => node.id)), new Set(map.nodes.map(node => node.id)));
   assert.ok(complete.nodes.some(node => node.data.entity.kind === "operation"));
+  for (const [showRules, showServices] of [[true, true], [false, false]]) {
+    const services = applicationLayout(map,"services",showRules,showServices);
+    assert.deepEqual(new Set(services.nodes.map(node => node.data.entity.kind)), new Set(["service","operation"]),
+      "The services detail shows only services and operations, regardless of the toggles");
+    assert.equal(services.nodes.length, map.nodes.filter(node => ["service","operation"].includes(node.kind)).length);
+  }
+  const callingScreen = map.nodes.find(node=>node.kind==="service")!.screenIds[0];
+  assert.ok(callingScreen);
+  assert.ok(applicationLayout(map,"services",true,true,callingScreen).nodes.some(node => node.data.entity.kind === "service"),
+    "The services detail keeps the services called from the selected screen");
   const before = JSON.stringify(complete);
   const connections = applicationConnections(map, complete, filters.id);
   assert.ok(connections.some(edge => edge.label === "Contains"));
