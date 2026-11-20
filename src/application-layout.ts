@@ -31,7 +31,9 @@ export function applicationLayout(map: ApplicationMap, detail: string, showRules
     }
   }
   const included = map.nodes.filter(node => {
-    if (!showServices && ["service", "operation"].includes(node.kind)) return false;
+    // The "services" detail level shows only services and their operations, regardless of the Rules/Services toggles.
+    if (detail === "services" && !["service", "operation"].includes(node.kind)) return false;
+    if (detail !== "services" && !showServices && ["service", "operation"].includes(node.kind)) return false;
     if (!showRules && node.kind === "rule") return false;
     if (detail === "screens" && !["screen", "service", ...(showRules ? ["rule"] : [])].includes(node.kind)) return false;
     if (detail === "components" && ["element", "operation"].includes(node.kind)) return false;
